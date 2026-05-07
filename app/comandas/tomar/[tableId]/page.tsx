@@ -124,7 +124,7 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
 
   const handleAddItemDirectly = async (itemId: string, item: { name: string; price: number; printer_target?: string }) => {
     if (!order) return
-    await addItemToOrder(order.id, { ...item, quantity: 1 })
+    await addItemToOrder(order.id, { ...item, quantity: 1, menu_item_id: itemId })
     const updated = await getOrCreateOrder(tableId)
     setOrder(updated)
     // Trigger animation
@@ -168,7 +168,8 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
       name: fullName,
       price: totalPrice,
       quantity: 1,
-      printer_target: (selectedItem as MenuItem & { printer_target?: string }).printer_target
+      printer_target: (selectedItem as MenuItem & { printer_target?: string }).printer_target,
+      menu_item_id: selectedItem.id
     })
     
     const updated = await getOrCreateOrder(tableId)

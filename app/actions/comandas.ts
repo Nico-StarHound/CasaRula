@@ -401,19 +401,37 @@ export async function getOrCreateOrder(tableId: string): Promise<Order | null> {
 
 export async function addItemToOrder(
   orderId: string,
-  item: { name: string; price: number; quantity: number; notes?: string; printer_target?: string }
+  item: { name: string; price: number; quantity: number; notes?: string; printer_target?: string; menu_item_id?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
+
+  // Resolve printer_target: explicit > inherited from category > 'cocina' default.
+  // We always look it up if missing so the UI doesn't have to remember to pass it.
+  let printerTarget: string = item.printer_target || ''
+  if (!printerTarget && item.menu_item_id) {
+    const { data } = await supabase
+      .from('menu_items')
+      .select('menu_categories(printer_target)')
+      .eq('id', item.menu_item_id)
+      .single()
+    // @ts-expect-error nested select type
+    printerTarget = data?.menu_categories?.printer_target || ''
+  }
+  if (!printerTarget) {
+    // Last resort: send to cocina (everything goes there if the menu has no destinos set)
+    printerTarget = 'cocina'
+  }
 
   const { error } = await supabase
     .from('order_items')
     .insert({
       order_id: orderId,
+      menu_item_id: item.menu_item_id || null,
       name: item.name,
       price: item.price,
       quantity: item.quantity,
       notes: item.notes || null,
-      printer_target: item.printer_target || null,
+      printer_target: printerTarget,
       status: 'pending',
     })
 
