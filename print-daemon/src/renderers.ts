@@ -81,8 +81,9 @@ function money(n: number): string {
 
 // =====================================================================
 // Comanda (cocina or barra)
-// Design B: big centered MESA, items in size(1,2), notes UP TOP (allergies
-// must be visible before cooking starts), URGENT as inverted black band.
+// Design B refined: NO destination header (mesa goes top), everything in
+// uppercase + larger sizes for legibility, notes-on-top with inverted band,
+// urgente as full-width inverted band.
 // =====================================================================
 export function renderComanda(payload: ComandaPayload, kind: 'cocina' | 'barra'): Buffer {
   const e = new ESCPOS()
@@ -90,7 +91,7 @@ export function renderComanda(payload: ComandaPayload, kind: 'cocina' | 'barra')
 
   // ── URGENTE band (only if applicable) — full-width inverted, max attention
   if (payload.urgente) {
-    const label = '  *** URGENTE ***  '
+    const label = '*** URGENTE ***'
     const pad = Math.max(0, Math.floor((LINE_WIDTH - label.length) / 2))
     const padded = ' '.repeat(pad) + label + ' '.repeat(LINE_WIDTH - pad - label.length)
     e.bold(true).invert(true).size(1, 2)
@@ -99,55 +100,49 @@ export function renderComanda(payload: ComandaPayload, kind: 'cocina' | 'barra')
     e.newline()
   }
 
-  // ── Header
-  e.align('center').bold(true).size(2, 2)
-  e.line(kind === 'cocina' ? 'COCINA' : 'BARRA')
-  e.resetSize().bold(false)
-  e.align('left').hr('=')
-
-  // ── Mesa block (big, centered, framed)
-  e.newline()
+  // ── Mesa block at the very top, BIG (size 3,3 — triple). This is what
+  //    cocina latches onto from across the room.
   e.align('center')
-  e.line('┌─────────────┐')
-  e.bold(true).size(2, 2)
-  // Center "MESA NN" inside the box visually — the ESC/POS center alignment
-  // does the heavy lifting since size(2,2) is also centered by the printer.
-  e.line(`MESA  ${payload.table_label}`)
+  e.bold(true).size(3, 3)
+  e.line(`MESA ${payload.table_label}`)
   e.resetSize().bold(false)
-  e.line('└─────────────┘')
-  e.newline()
 
-  // Comensales · staff · time, all on one centered line
-  const meta = `${payload.comensales} pax  ·  ${payload.staff_name || '—'}  ·  ${fmtTimeShort(payload.printed_at)}`
+  // Comensales · staff · time on one centered line
+  const meta = `${payload.comensales} PAX  ·  ${(payload.staff_name || '—').toUpperCase()}  ·  ${fmtTimeShort(payload.printed_at)}`
   e.line(meta)
   e.align('left')
 
   // ── Nota de mesa ARRIBA (allergies, requests — must be seen before cooking)
   if (payload.nota_mesa) {
     e.newline()
-    e.hr('-')
     e.bold(true).invert(true).size(1, 2)
     e.line(' NOTA MESA ')
     e.resetSize().invert(false).bold(false)
-    e.bold(true).line(payload.nota_mesa).bold(false)
+    e.bold(true).size(1, 2)
+    e.line(payload.nota_mesa.toUpperCase())
+    e.resetSize().bold(false)
   }
 
   e.hr('=')
   e.newline()
 
-  // ── Items (size 1,2 — double height, normal width — readable from afar)
+  // ── Items — size 2,2 (double everything), uppercase, very readable
   for (const item of payload.items) {
-    e.bold(true).size(1, 2)
-    e.line(`  ${item.quantity}x  ${item.name.toUpperCase()}`)
+    e.bold(true).size(2, 2)
+    e.line(`${item.quantity}x ${item.name.toUpperCase()}`)
     e.resetSize().bold(false)
 
     if (item.modifiers && item.modifiers.length > 0) {
       for (const m of item.modifiers) {
-        e.line(`        » ${m.name}`)
+        e.bold(true).size(1, 2)
+        e.line(`   » ${m.name.toUpperCase()}`)
+        e.resetSize().bold(false)
       }
     }
     if (item.notes) {
-      e.line(`        » ${item.notes}`)
+      e.bold(true).size(1, 2)
+      e.line(`   » ${item.notes.toUpperCase()}`)
+      e.resetSize().bold(false)
     }
     e.newline()
   }
