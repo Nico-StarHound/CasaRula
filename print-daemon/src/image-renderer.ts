@@ -1,7 +1,17 @@
 // Render tickets as images using @napi-rs/canvas, then convert to the
 // 1-bit-per-pixel bitmap format that ESC/POS thermal printers expect.
 
-import { createCanvas, type SKRSContext2D, type Canvas } from '@napi-rs/canvas'
+import { createCanvas, GlobalFonts, type SKRSContext2D, type Canvas } from '@napi-rs/canvas'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+
+// Register bundled Inter fonts so we don't depend on what's installed
+// on the host OS. Works the same on Mac dev box, Mac in production,
+// and (later) on the Windows package.
+const here = path.dirname(fileURLToPath(import.meta.url))
+const fontsDir = path.resolve(here, '..', 'fonts')
+GlobalFonts.registerFromPath(path.join(fontsDir, 'Inter-Regular.ttf'), 'Inter')
+GlobalFonts.registerFromPath(path.join(fontsDir, 'Inter-Bold.ttf'), 'Inter Bold')
 
 // Munbyn ITPP047P: 80mm paper, 203 dpi → ~576 printable px wide.
 // Must be multiple of 8 for ESC/POS raster command.
@@ -66,11 +76,8 @@ export interface CursorState {
 }
 
 export const FONT = {
-  // System fonts on macOS: "Helvetica" is bundled and renders cleanly.
-  // For the Windows build we'll bundle a TTF (Inter or similar) and load it
-  // via GlobalFonts.registerFromPath at startup.
-  sans: 'Helvetica',
-  sansBold: 'Helvetica',
+  sans: 'Inter',
+  sansBold: 'Inter Bold',
   mono: 'Menlo',
 }
 

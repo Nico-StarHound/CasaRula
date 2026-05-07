@@ -8,7 +8,9 @@ import {
   drawText,
   drawHr,
   drawWrappedText,
+  drawRow,
   space,
+  PRINT_WIDTH_PX,
   type CursorState,
 } from './image-renderer.js'
 
@@ -246,72 +248,164 @@ export function renderAnulacion(payload: AnulacionPayload): Buffer {
 }
 
 // =====================================================================
-// Factura simplificada (ticket)
+// Factura simplificada (ticket de venta) — rendered as image
 // =====================================================================
 export function renderFactura(payload: FacturaPayload): Buffer {
-  const e = new ESCPOS()
-  e.init()
+  // Estimate height
+  const itemCount = payload.items.length
+  const approxHeight =
+    280 + // header (name, NIF, dirección, tel)
+    180 + // ticket meta
+    itemCount * 42 + // items
+    260 + // totals + TOTAL band + payment
+    180 + // footer
+    160
 
-  // Header
-  e.align('center').bold(true).size(2, 2)
-  e.line(payload.restaurant.name)
-  e.resetSize().bold(false)
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 28 }
 
-  if (payload.restaurant.nif) e.line(`NIF: ${payload.restaurant.nif}`)
-  if (payload.restaurant.direccion) e.line(payload.restaurant.direccion)
-  if (payload.restaurant.telefono) e.line(`Tel: ${payload.restaurant.telefono}`)
-
-  e.align('left').hr('=')
-
-  // Ticket meta
-  e.row(`Ticket: ${payload.numero}`, fmtTime(payload.printed_at))
-  e.row(`Mesa: ${payload.table_label}`, `${payload.comensales} pax`)
-  if (payload.staff_name) e.line(`Atiende: ${payload.staff_name}`)
-
-  e.hr('-')
-
-  // Items
-  // Format: "qty x name ............. price"
-  for (const item of payload.items) {
-    const lineTotal = item.price * item.quantity
-    const left = `${item.quantity}x ${item.name}`
-    const right = money(lineTotal)
-
-    if (left.length + right.length + 1 > LINE_WIDTH) {
-      // Name too long — wrap
-      e.line(left)
-      e.row('', right)
-    } else {
-      e.row(left, right)
-    }
+  // ── Header
+  drawText(ctx, cursor, payload.restaurant.name, { size: 56, bold: true, align: 'center' })
+  space(cursor, 4)
+  if (payload.restaurant.nif) {
+    drawText(ctx, cursor, `NIF: ${payload.restaurant.nif}`, { size: 20, align: 'center' })
+  }
+  if (payload.restaurant.direccion) {
+    drawWrappedText(ctx, cursor, payload.restaurant.direccion, {
+      size: 20,
+      align: 'center',
+      paddingX: 24,
+    })
+  }
+  if (payload.restaurant.telefono) {
+    drawText(ctx, cursor, `Tel: ${payload.restaurant.telefono}`, { size: 20, align: 'center' })
   }
 
-  e.hr('-')
+  drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
 
-  // Totals
-  e.row('Subtotal:', money(payload.subtotal))
-  e.row('IVA (10%):', money(payload.iva))
-  e.bold(true).size(1, 2)
-  e.row('TOTAL:', money(payload.total))
-  e.resetSize().bold(false)
+  // ── Ticket meta (two-column)
+  drawRow(ctx, cursor, 'Ticket:', payload.numero, { size: 22 })
+  drawRow(ctx, cursor, 'Fecha:', fmtTime(payload.printed_at), { size: 22 })
+  drawRow(ctx, cursor, 'Mesa:', `${payload.table_label} · ${payload.comensales} pax`, { size: 22 })
+  if (payload.staff_name) {
+    drawRow(ctx, cursor, 'Atiende:', payload.staff_name, { size: 22 })
+  }
 
-  e.newline()
-  e.row('Pago:', payload.payment_method.toUpperCase())
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+
+  // ── Items: qty | name | price (3-column manual layout)
+  for (const item of payload.items) {
+    drawItemRow(ctx, cursor, item)
+  }
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+
+  // ── Totals
+  drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
+  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  space(cursor, 6)
+
+  // TOTAL — inverted band, big
+  drawTotalBand(ctx, cursor, 'TOTAL', money(payload.total))
+  space(cursor, 16)
+
+  // ── Payment
+  const pago = payload.payment_method === 'efectivo' ? 'Efectivo'
+             : payload.payment_method === 'tarjeta' ? 'Tarjeta'
+             : 'Mixto'
+  drawRow(ctx, cursor, 'Pago:', pago, { size: 22 })
   if (payload.efectivo_entregado != null) {
-    e.row('Entregado:', money(payload.efectivo_entregado))
+    drawRow(ctx, cursor, 'Entregado:', money(payload.efectivo_entregado), { size: 22 })
   }
   if (payload.cambio != null) {
-    e.row('Cambio:', money(payload.cambio))
+    drawRow(ctx, cursor, 'Cambio:', money(payload.cambio), { size: 22 })
   }
 
-  if (payload.restaurant.pie_ticket) {
-    e.newline()
-    e.align('center').line(payload.restaurant.pie_ticket).align('left')
-  }
+  drawHr(ctx, cursor, { dashed: true, marginY: 18 })
 
-  e.feed(3).cut()
+  // ── Footer
+  drawText(ctx, cursor, payload.restaurant.pie_ticket || '¡Gracias por su visita!', {
+    size: 22, bold: true, align: 'center',
+  })
+  drawText(ctx, cursor, 'IVA 10% incluido', { size: 18, align: 'center' })
+  space(cursor, 30)
 
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
+  const e = new ESCPOS()
+  e.init()
+  e.rasterImage(bitmap, width, height)
+  e.feed(2).cut()
   return e.build()
+}
+
+// 3-column item row: qty (left) · name (mid) · price (right)
+function drawItemRow(
+  ctx: SKRSContext2D,
+  cursor: CursorState,
+  item: { name: string; quantity: number; price: number }
+) {
+  const size = 26
+  const lineHeight = Math.round(size * 1.18)
+  const padX = 24
+  const qtyColX = padX
+  const nameColX = padX + 54
+  const lineTotal = item.price * item.quantity
+
+  ctx.font = `bold ${size}px Inter Bold`
+  ctx.fillStyle = 'black'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.fillText(`${item.quantity}x`, qtyColX, cursor.y)
+
+  // Name — wrap if necessary inside the available column
+  const priceStr = money(lineTotal)
+  ctx.font = `bold ${size}px Inter Bold`
+  const priceW = ctx.measureText(priceStr).width
+  const nameMaxW = PRINT_WIDTH_PX - nameColX - padX - priceW - 12
+
+  ctx.font = `bold ${size}px Inter Bold`
+  const words = item.name.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const w of words) {
+    const test = current ? current + ' ' + w : w
+    if (ctx.measureText(test).width <= nameMaxW) {
+      current = test
+    } else {
+      if (current) lines.push(current)
+      current = w
+    }
+  }
+  if (current) lines.push(current)
+
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], nameColX, cursor.y + i * lineHeight)
+  }
+
+  // Price right-aligned, on the first line
+  ctx.textAlign = 'right'
+  ctx.fillText(priceStr, PRINT_WIDTH_PX - padX, cursor.y)
+
+  cursor.y += lineHeight * Math.max(1, lines.length) + 4
+}
+
+function drawTotalBand(ctx: SKRSContext2D, cursor: CursorState, label: string, value: string) {
+  const size = 36
+  const padY = 12
+  const padX = 24
+  const bandH = size + padY * 2
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold ${size}px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.fillText(label, padX, cursor.y + padY)
+  ctx.textAlign = 'right'
+  ctx.fillText(value, PRINT_WIDTH_PX - padX, cursor.y + padY)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH
 }
 
 // =====================================================================
