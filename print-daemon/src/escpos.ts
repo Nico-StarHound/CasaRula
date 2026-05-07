@@ -9,16 +9,18 @@ const LF = 0x0a
 
 export const LINE_WIDTH = 48 // chars at normal width on 80mm paper
 
-// Munbyn ITPP047P ignores ESC t (codepage select) and stays on its factory default.
-// Empirically that default is CP437 on this model, which already covers ñ, áéíóú and €.
-// We encode our strings to CP437 so the bytes match what the printer expects.
-const PRINTER_CODEPAGE = 'cp437'
+// Munbyn ITPP047P: factory default is CP437, but it accepts ESC t to switch.
+// CP858 = CP850 + Euro, covers ñ, áéíóú, ¿¡ and €.
+// We send ESC t 19 (CP858) on init() and encode all text to CP858.
+const PRINTER_CODEPAGE = 'cp858'
+const SET_CODEPAGE = Buffer.from([ESC, 0x74, 19]) // ESC t 19 = CP858
 
 export class ESCPOS {
   private chunks: Buffer[] = []
 
   init() {
     this.chunks.push(Buffer.from([ESC, 0x40])) // ESC @ — initialize
+    this.chunks.push(SET_CODEPAGE)
     return this
   }
 
