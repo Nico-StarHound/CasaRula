@@ -96,7 +96,7 @@ function money(n: number): string {
 // Design: NO destination header (mesa is the header), all uppercase,
 // notes-on-top with inverted band, urgente as huge inverted black band.
 // =====================================================================
-export function renderComanda(payload: ComandaPayload, _kind: 'cocina' | 'barra'): Buffer {
+export function renderComanda(payload: ComandaPayload, _kind: 'cocina' | 'barra'): ESCPOS {
   // First pass: estimate the height we need. We over-allocate generously
   // and trim later — canvas can't grow dynamically.
   // Rough budget: 80 (urgente) + 130 (mesa+meta) + 100 (nota) + 90 per item + 60 (footer)
@@ -197,9 +197,9 @@ export function renderComanda(payload: ComandaPayload, _kind: 'cocina' | 'barra'
   const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
   const e = new ESCPOS()
   e.init()
-  e.rasterImage(bitmap, width, height)
+  e.rasterImageEscStar(bitmap, width, height)
   e.feed(2).cut()
-  return e.build()
+  return e
 }
 
 // Helper: trim a canvas to a smaller height (returns a new canvas).
@@ -215,7 +215,7 @@ function trimCanvas(src: Canvas, newHeight: number): Canvas {
 // =====================================================================
 // Anulación
 // =====================================================================
-export function renderAnulacion(payload: AnulacionPayload): Buffer {
+export function renderAnulacion(payload: AnulacionPayload): ESCPOS {
   const e = new ESCPOS()
   e.init()
 
@@ -244,13 +244,13 @@ export function renderAnulacion(payload: AnulacionPayload): Buffer {
   e.hr('-')
   e.feed(2).cut()
 
-  return e.build()
+  return e
 }
 
 // =====================================================================
 // Factura simplificada (ticket de venta) — rendered as image
 // =====================================================================
-export function renderFactura(payload: FacturaPayload): Buffer {
+export function renderFactura(payload: FacturaPayload): ESCPOS {
   // Estimate height
   const itemCount = payload.items.length
   const approxHeight =
@@ -334,9 +334,9 @@ export function renderFactura(payload: FacturaPayload): Buffer {
   const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
   const e = new ESCPOS()
   e.init()
-  e.rasterImage(bitmap, width, height)
+  e.rasterImageEscStar(bitmap, width, height)
   e.feed(2).cut()
-  return e.build()
+  return e
 }
 
 // 3-column item row: qty (left) · name (mid) · price (right)
@@ -411,7 +411,7 @@ function drawTotalBand(ctx: SKRSContext2D, cursor: CursorState, label: string, v
 // =====================================================================
 // Cuenta provisional (preview, no payment info)
 // =====================================================================
-export function renderCuentaProvisional(payload: CuentaProvisionalPayload): Buffer {
+export function renderCuentaProvisional(payload: CuentaProvisionalPayload): ESCPOS {
   const e = new ESCPOS()
   e.init()
 
@@ -448,5 +448,5 @@ export function renderCuentaProvisional(payload: CuentaProvisionalPayload): Buff
   e.align('center').line('* No es factura *').align('left')
 
   e.feed(3).cut()
-  return e.build()
+  return e
 }

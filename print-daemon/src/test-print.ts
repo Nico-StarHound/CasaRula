@@ -1,22 +1,33 @@
 // Quick test: send a sample ticket directly to a printer IP.
-// Usage: PRINTER_IP=192.168.1.50 npx tsx src/test-print.ts
+// Usage:
+//   PRINTER_IP=192.168.1.50 npm run test:print               # all 3 (uses paper!)
+//   PRINTER_IP=192.168.1.50 ONLY=normal npm run test:print   # just one
+//   ONLY=normal DRY_RUN=true npm run test:print              # NO printing, dump bin only
 //
-// If this works, the printer is reachable and ESC/POS-compatible.
-// Then you can move on to running the full daemon.
+// In DRY_RUN, no bytes go to the printer. The raw ESC/POS is dumped to
+// /tmp/casarula-test-*.bin so we can inspect it without wasting paper.
 
 import 'dotenv/config'
-import { sendToPrinter } from './printer.js'
+import fs from 'node:fs'
+import path from 'node:path'
+import { sendChunksToPrinter } from './printer.js'
 import { renderComanda, renderFactura } from './renderers.js'
+import { ESCPOS } from './escpos.js'
 
 const ip = process.env.PRINTER_IP || process.env.PRINTER_COCINA_IP
 const port = Number(process.env.PRINTER_PORT || 9100)
+const dryRun = process.env.DRY_RUN === 'true'
+const only = (process.env.ONLY || 'all').toLowerCase() // 'normal' | 'urgente' | 'factura' | 'all'
+const chunkDelay = Number(process.env.CHUNK_DELAY_MS || 60)
 
-if (!ip) {
-  console.error('Set PRINTER_IP=x.x.x.x (or PRINTER_COCINA_IP in .env)')
+if (!ip && !dryRun) {
+  console.error('Set PRINTER_IP=x.x.x.x (or PRINTER_COCINA_IP in .env), or use DRY_RUN=true')
   process.exit(1)
 }
 
-console.log(`Sending test ticket to ${ip}:${port}…`)
+console.log(dryRun
+  ? 'DRY RUN — nothing will be sent to the printer'
+  : `Sending test ticket(s) to ${ip}:${port}…`)
 
 const sampleComandaNormal = renderComanda(
   {
@@ -78,14 +89,26 @@ const sampleFactura = renderFactura({
   },
 })
 
+async function send(label: string, escpos: ESCPOS, kind: string) {
+  const chunks = escpos.buildChunks()
+  const total = chunks.reduce((s, c) => s + c.length, 0)
+  const dumpPath = path.join('/tmp', `casarula-test-${kind}.bin`)
+  fs.writeFileSync(dumpPath, Buffer.concat(chunks))
+  console.log(`— ${label}: ${chunks.length} chunks · ${total} bytes · dumped to ${dumpPath}`)
+  if (dryRun) return
+  await sendChunksToPrinter({ ip: ip!, port }, chunks, chunkDelay)
+}
+
 async function run() {
-  const target = { ip: ip!, port }
-  console.log('— Comanda cocina (con nota)')
-  await sendToPrinter(target, sampleComandaNormal)
-  console.log('— Comanda cocina (URGENTE)')
-  await sendToPrinter(target, sampleComandaUrgente)
-  console.log('— Factura')
-  await sendToPrinter(target, sampleFactura)
+  if (only === 'all' || only === 'normal') {
+    await send('Comanda cocina (con nota)', sampleComandaNormal, 'comanda-normal')
+  }
+  if (only === 'all' || only === 'urgente') {
+    await send('Comanda cocina (URGENTE)', sampleComandaUrgente, 'comanda-urgente')
+  }
+  if (only === 'all' || only === 'factura') {
+    await send('Factura', sampleFactura, 'factura')
+  }
   console.log('Done. ✓')
 }
 

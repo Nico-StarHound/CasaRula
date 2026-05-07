@@ -95,15 +95,9 @@ export class ESCPOS {
   /**
    * Print a raster bitmap (1bpp, black/white).
    *
-   * Uses GS v 0 (raster bit image command). For large images we slice the
-   * bitmap into horizontal bands of MAX_BAND_HEIGHT rows and send each
-   * with its own GS v 0 command — many small printers (Munbyn included)
-   * have a limited image buffer and silently corrupt big single-shot
-   * bitmaps, dumping the leftover bytes as garbage text.
+   * Uses GS v 0 with the FULL bitmap in one shot.
    *
-   * Input: a Buffer of width*height bits packed MSB-first into bytes.
-   * Each bit = 1 means "print black pixel".
-   *
+   * Input: width*height bits packed MSB-first into bytes.
    * widthPx must be a multiple of 8.
    */
   rasterImage(bitmap: Buffer, widthPx: number, heightPx: number) {
@@ -112,33 +106,76 @@ export class ESCPOS {
       throw new Error(`rasterImage: width ${widthPx} must be multiple of 8`)
     }
 
-    // Most ESC/POS printers handle ~256 row bands safely. We use 128 to be
-    // extra conservative on the Munbyn ITPP047P.
-    const MAX_BAND_HEIGHT = 128
+    const header = Buffer.from([
+      GS, 0x76, 0x30, 0x00,
+      widthBytes & 0xff, (widthBytes >> 8) & 0xff,
+      heightPx & 0xff, (heightPx >> 8) & 0xff,
+    ])
+    this.chunks.push(header)
+    this.chunks.push(bitmap)
+    return this
+  }
 
-    let rowOffset = 0
-    while (rowOffset < heightPx) {
-      const bandHeight = Math.min(MAX_BAND_HEIGHT, heightPx - rowOffset)
-      const bandStart = rowOffset * widthBytes
-      const bandEnd = bandStart + bandHeight * widthBytes
-      const band = bitmap.subarray(bandStart, bandEnd)
-
-      // GS v 0 m xL xH yL yH d1 d2 ... dk
-      // m = 0 → normal mode (no horizontal/vertical scaling)
-      const header = Buffer.from([
-        GS, 0x76, 0x30, 0x00,
-        widthBytes & 0xff, (widthBytes >> 8) & 0xff,
-        bandHeight & 0xff, (bandHeight >> 8) & 0xff,
-      ])
-      this.chunks.push(header)
-      this.chunks.push(band)
-
-      rowOffset += bandHeight
+  /**
+   * Alternative bitmap mode: ESC * — prints bitmap one stripe (8 or 24 px tall)
+   * at a time. More universally supported on cheap thermals than GS v 0.
+   * Each stripe is fed as MSB-first bytes, one column per byte (24-bit mode
+   * uses 3 bytes per column).
+   *
+   * widthPx must be ≤ 65535. Bitmap layout same as rasterImage.
+   * We use mode 33 (24-dot double density), which is what most ESC/POS
+   * printers default to when "graphics mode" is requested.
+   */
+  rasterImageEscStar(bitmap: Buffer, widthPx: number, heightPx: number) {
+    const widthBytes = widthPx / 8
+    if (!Number.isInteger(widthBytes)) {
+      throw new Error(`rasterImageEscStar: width ${widthPx} must be multiple of 8`)
     }
+
+    // Set line spacing to 24 dots (ESC 3 24) so stripes stack with no gap
+    this.chunks.push(Buffer.from([ESC, 0x33, 24]))
+
+    const STRIPE_H = 24
+    for (let yStripe = 0; yStripe < heightPx; yStripe += STRIPE_H) {
+      const stripeRows = Math.min(STRIPE_H, heightPx - yStripe)
+
+      // ESC * m nL nH d1 d2 ...
+      // m = 33 (24-dot double-density), n = number of columns (= widthPx)
+      this.chunks.push(Buffer.from([
+        ESC, 0x2a, 33,
+        widthPx & 0xff, (widthPx >> 8) & 0xff,
+      ]))
+
+      // Build column data: 3 bytes per column (24 bits, MSB top)
+      const stripeData = Buffer.alloc(widthPx * 3)
+      for (let x = 0; x < widthPx; x++) {
+        for (let row = 0; row < stripeRows; row++) {
+          const absY = yStripe + row
+          const byteIdx = absY * widthBytes + (x >> 3)
+          const bitMask = 1 << (7 - (x & 7))
+          if (bitmap[byteIdx] & bitMask) {
+            const outByteOffset = Math.floor(row / 8)
+            const outBitInByte = 7 - (row % 8)
+            stripeData[x * 3 + outByteOffset] |= 1 << outBitInByte
+          }
+        }
+      }
+      this.chunks.push(stripeData)
+      // Newline after each stripe so the printer advances paper
+      this.chunks.push(Buffer.from([LF]))
+    }
+
+    // Reset line spacing back to default
+    this.chunks.push(Buffer.from([ESC, 0x32]))
     return this
   }
 
   build(): Buffer {
     return Buffer.concat(this.chunks)
+  }
+
+  /** Return individual chunks, useful for paced sending to slow printers. */
+  buildChunks(): Buffer[] {
+    return [...this.chunks]
   }
 }

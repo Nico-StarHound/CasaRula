@@ -6,16 +6,20 @@
 //   3. Also poll every 30s as a safety net in case Realtime drops a beat
 
 import 'dotenv/config'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { ESCPOS } from './escpos.js'
 import { renderComanda, renderFactura, renderAnulacion, renderCuentaProvisional } from './renderers.js'
-import { sendToPrinter, type PrinterTarget } from './printer.js'
+import { sendChunksToPrinter, type PrinterTarget } from './printer.js'
 
 const SUPABASE_URL = required('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = required('SUPABASE_SERVICE_ROLE_KEY')
 const RESTAURANT_ID = required('RESTAURANT_ID')
 const DRY_RUN = process.env.DRY_RUN === 'true'
+const DEBUG_DUMP = process.env.DEBUG_DUMP === 'true' || DRY_RUN
 const PRINTER_PORT = Number(process.env.PRINTER_PORT || 9100)
+const CHUNK_DELAY_MS = Number(process.env.CHUNK_DELAY_MS || 60)
 
 const ENV_PRINTERS: Record<string, string | undefined> = {
   cocina: process.env.PRINTER_COCINA_IP,
@@ -73,39 +77,51 @@ async function processJob(job: {
 
   try {
     // Render
-    let bytes: Buffer
+    let escpos: ESCPOS
     switch (job.kind) {
       case 'comanda_cocina':
-        bytes = renderComanda(job.payload, 'cocina')
+        escpos = renderComanda(job.payload, 'cocina')
         break
       case 'comanda_barra':
-        bytes = renderComanda(job.payload, 'barra')
+        escpos = renderComanda(job.payload, 'barra')
         break
       case 'anulacion':
-        bytes = renderAnulacion(job.payload)
+        escpos = renderAnulacion(job.payload)
         break
       case 'factura':
-        bytes = renderFactura(job.payload)
+        escpos = renderFactura(job.payload)
         break
       case 'cuenta_provisional':
-        bytes = renderCuentaProvisional(job.payload)
+        escpos = renderCuentaProvisional(job.payload)
         break
       case 'test':
-        bytes = new ESCPOS().init().align('center').bold(true).line('CASA RULA - TEST OK').feed(3).cut().build()
+        escpos = new ESCPOS().init().align('center').bold(true).line('CASA RULA - TEST OK').feed(3).cut()
         break
       default:
         throw new Error(`Unknown job kind: ${job.kind}`)
     }
 
+    const chunks = escpos.buildChunks()
+    const totalBytes = chunks.reduce((s, c) => s + c.length, 0)
+
+    // Dump raw ESC/POS to disk for inspection (always when DRY_RUN, optional otherwise)
+    if (DEBUG_DUMP) {
+      const dumpDir = '/tmp'
+      const dumpPath = path.join(dumpDir, `casarula-last-print-${job.kind}.bin`)
+      fs.writeFileSync(dumpPath, Buffer.concat(chunks))
+      console.log(`[daemon] DEBUG: dumped ${totalBytes} bytes to ${dumpPath}`)
+    }
+
     // Send
     if (DRY_RUN) {
-      console.log(`[daemon] DRY_RUN — would print ${bytes.length} bytes:\n` + bytes.toString('latin1'))
+      console.log(`[daemon] DRY_RUN — would send ${chunks.length} chunks (${totalBytes} bytes)`)
     } else {
       const target = await resolvePrinter(job.printer_type)
       if (!target) {
         throw new Error(`No online printer of type "${job.printer_type}" found`)
       }
-      await sendToPrinter(target, bytes)
+      console.log(`[daemon] sending ${chunks.length} chunks (${totalBytes} bytes) to ${target.ip}:${target.port}`)
+      await sendChunksToPrinter(target, chunks, CHUNK_DELAY_MS)
     }
 
     // Success
