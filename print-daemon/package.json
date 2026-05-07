@@ -1,0 +1,21 @@
+{
+  "name": "casarula-print-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daemon that consumes print_jobs from Supabase and prints to ESC/POS thermal printers",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test:print": "tsx src/test-print.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
