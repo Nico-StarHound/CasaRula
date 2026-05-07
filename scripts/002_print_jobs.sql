@@ -94,3 +94,32 @@ BEGIN
   RETURN v_job;
 END;
 $$;
+
+-- =====================================================================
+-- Row-Level Security
+-- =====================================================================
+-- The daemon uses the service_role key, which bypasses RLS entirely,
+-- so these policies only affect the web app (anon/authenticated keys).
+-- We allow authenticated sessions full CRUD on print_jobs for now —
+-- tighten later if you add multi-restaurant support.
+-- =====================================================================
+ALTER TABLE print_jobs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "print_jobs_authenticated_all" ON print_jobs;
+CREATE POLICY "print_jobs_authenticated_all"
+  ON print_jobs
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+-- If your web app currently uses the anon key for server actions
+-- (no Supabase Auth login on the staff side, only PIN-based custom auth),
+-- you also need this policy. Otherwise the app cannot enqueue jobs.
+DROP POLICY IF EXISTS "print_jobs_anon_all" ON print_jobs;
+CREATE POLICY "print_jobs_anon_all"
+  ON print_jobs
+  FOR ALL
+  TO anon
+  USING (true)
+  WITH CHECK (true);
