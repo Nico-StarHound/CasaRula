@@ -10,6 +10,7 @@
     "test:print": "tsx src/test-print.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
     "@supabase/supabase-js": "^2.49.4",
     "dotenv": "^16.4.5",
     "iconv-lite": "^0.7.2"

@@ -1,6 +1,16 @@
 // Ticket renderers — turn a print_job payload into ESC/POS bytes.
 
 import { ESCPOS, LINE_WIDTH } from './escpos.js'
+import { createCanvas, type SKRSContext2D, type Canvas } from '@napi-rs/canvas'
+import {
+  createTicketCanvas,
+  canvasToMonoBitmap,
+  drawText,
+  drawHr,
+  drawWrappedText,
+  space,
+  type CursorState,
+} from './image-renderer.js'
 
 interface ComandaItem {
   name: string
@@ -80,77 +90,124 @@ function money(n: number): string {
 }
 
 // =====================================================================
-// Comanda (cocina or barra)
-// Design B refined: NO destination header (mesa goes top), everything in
-// uppercase + larger sizes for legibility, notes-on-top with inverted band,
-// urgente as full-width inverted band.
+// Comanda (cocina or barra) — rendered as image with proper typography.
+// Design: NO destination header (mesa is the header), all uppercase,
+// notes-on-top with inverted band, urgente as huge inverted black band.
 // =====================================================================
-export function renderComanda(payload: ComandaPayload, kind: 'cocina' | 'barra'): Buffer {
+export function renderComanda(payload: ComandaPayload, _kind: 'cocina' | 'barra'): Buffer {
+  // First pass: estimate the height we need. We over-allocate generously
+  // and trim later — canvas can't grow dynamically.
+  // Rough budget: 80 (urgente) + 130 (mesa+meta) + 100 (nota) + 90 per item + 60 (footer)
+  const approxHeight =
+    (payload.urgente ? 90 : 0) +
+    160 + // mesa block + meta line
+    (payload.nota_mesa ? 130 : 0) +
+    payload.items.reduce((sum, i) => {
+      const modLines = (i.modifiers?.length || 0) + (i.notes ? 1 : 0)
+      return sum + 70 + modLines * 38
+    }, 0) +
+    80
+
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 24 }
+
+  // ── URGENTE band (full-width inverted) ──
+  if (payload.urgente) {
+    drawText(ctx, cursor, '*** URGENTE ***', {
+      size: 44,
+      bold: true,
+      align: 'center',
+      invert: true,
+      invertPaddingY: 12,
+    })
+    space(cursor, 18)
+  }
+
+  // ── MESA at the top, MASSIVE ──
+  drawText(ctx, cursor, `MESA ${payload.table_label}`, {
+    size: 80,
+    bold: true,
+    align: 'center',
+  })
+  space(cursor, 8)
+
+  // ── Meta line: pax · staff · time ──
+  const meta = `${payload.comensales} PAX  ·  ${(payload.staff_name || '—').toUpperCase()}  ·  ${fmtTimeShort(payload.printed_at)}`
+  drawText(ctx, cursor, meta, { size: 26, align: 'center' })
+
+  // ── Nota de mesa (UP TOP — allergies must be seen before cooking) ──
+  if (payload.nota_mesa) {
+    space(cursor, 16)
+    drawText(ctx, cursor, ' NOTA MESA ', {
+      size: 26,
+      bold: true,
+      align: 'center',
+      invert: true,
+      invertPaddingY: 8,
+    })
+    space(cursor, 8)
+    drawWrappedText(ctx, cursor, payload.nota_mesa.toUpperCase(), {
+      size: 32,
+      bold: true,
+      align: 'left',
+      paddingX: 24,
+    })
+  }
+
+  drawHr(ctx, cursor, { thickness: 3, marginY: 16 })
+
+  // ── Items ──
+  for (const item of payload.items) {
+    drawWrappedText(ctx, cursor, `${item.quantity}x  ${item.name.toUpperCase()}`, {
+      size: 36,
+      bold: true,
+      align: 'left',
+      paddingX: 16,
+    })
+
+    const modList: string[] = []
+    if (item.modifiers) modList.push(...item.modifiers.map(m => m.name))
+    if (item.notes) modList.push(item.notes)
+
+    for (const mod of modList) {
+      drawWrappedText(ctx, cursor, `»  ${mod.toUpperCase()}`, {
+        size: 26,
+        bold: false,
+        align: 'left',
+        paddingX: 16,
+        indentX: 40,
+      })
+    }
+    space(cursor, 16)
+  }
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 8 })
+  space(cursor, 40) // bottom feed before cut
+
+  // Trim canvas to actual height used (cursor.y) — we may have over-allocated.
+  // Easiest path: create a new canvas of exact height and copy. Skipping this
+  // is fine for now; the bitmap converter just sends extra white rows which
+  // the printer feeds blank. We'll trim later if it wastes paper.
+  const usedHeight = Math.min(approxHeight, Math.ceil(cursor.y))
+  const trimmed = trimCanvas(canvas, usedHeight)
+
+  // Convert to bitmap and wrap with ESC/POS init + cut commands.
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
   const e = new ESCPOS()
   e.init()
-
-  // ── URGENTE band (only if applicable) — full-width inverted, max attention
-  if (payload.urgente) {
-    const label = '*** URGENTE ***'
-    const pad = Math.max(0, Math.floor((LINE_WIDTH - label.length) / 2))
-    const padded = ' '.repeat(pad) + label + ' '.repeat(LINE_WIDTH - pad - label.length)
-    e.bold(true).invert(true).size(1, 2)
-    e.line(padded)
-    e.resetSize().invert(false).bold(false)
-    e.newline()
-  }
-
-  // ── Mesa block at the very top, BIG (size 3,3 — triple). This is what
-  //    cocina latches onto from across the room.
-  e.align('center')
-  e.bold(true).size(3, 3)
-  e.line(`MESA ${payload.table_label}`)
-  e.resetSize().bold(false)
-
-  // Comensales · staff · time on one centered line
-  const meta = `${payload.comensales} PAX  ·  ${(payload.staff_name || '—').toUpperCase()}  ·  ${fmtTimeShort(payload.printed_at)}`
-  e.line(meta)
-  e.align('left')
-
-  // ── Nota de mesa ARRIBA (allergies, requests — must be seen before cooking)
-  if (payload.nota_mesa) {
-    e.newline()
-    e.bold(true).invert(true).size(1, 2)
-    e.line(' NOTA MESA ')
-    e.resetSize().invert(false).bold(false)
-    e.bold(true).size(1, 2)
-    e.line(payload.nota_mesa.toUpperCase())
-    e.resetSize().bold(false)
-  }
-
-  e.hr('=')
-  e.newline()
-
-  // ── Items — size 2,2 (double everything), uppercase, very readable
-  for (const item of payload.items) {
-    e.bold(true).size(2, 2)
-    e.line(`${item.quantity}x ${item.name.toUpperCase()}`)
-    e.resetSize().bold(false)
-
-    if (item.modifiers && item.modifiers.length > 0) {
-      for (const m of item.modifiers) {
-        e.bold(true).size(1, 2)
-        e.line(`   » ${m.name.toUpperCase()}`)
-        e.resetSize().bold(false)
-      }
-    }
-    if (item.notes) {
-      e.bold(true).size(1, 2)
-      e.line(`   » ${item.notes.toUpperCase()}`)
-      e.resetSize().bold(false)
-    }
-    e.newline()
-  }
-
-  e.hr('=')
-  e.feed(3).cut()
-
+  e.rasterImage(bitmap, width, height)
+  e.feed(2).cut()
   return e.build()
+}
+
+// Helper: trim a canvas to a smaller height (returns a new canvas).
+function trimCanvas(src: Canvas, newHeight: number): Canvas {
+  const trimmed = createCanvas(src.width, newHeight)
+  const tctx = trimmed.getContext('2d') as SKRSContext2D
+  tctx.fillStyle = 'white'
+  tctx.fillRect(0, 0, src.width, newHeight)
+  tctx.drawImage(src, 0, 0)
+  return trimmed
 }
 
 // =====================================================================
