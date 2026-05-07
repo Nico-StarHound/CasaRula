@@ -39,7 +39,7 @@ export default function TomarComandasPage() {
       {/* Header */}
       <header className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
         <div className="flex items-center gap-3 px-4 h-14">
-          <Link href="/comandas">
+          <Link href="/mapa">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
             </Button>

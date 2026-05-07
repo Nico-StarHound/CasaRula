@@ -269,7 +269,7 @@ const handleSendToKitchen = async () => {
   // Show toast and navigate
   setShowToast(true)
   setTimeout(() => {
-    router.push('/comandas')
+    router.push('/mapa')
   }, 1000)
 }
 
@@ -799,7 +799,7 @@ const handleSendToKitchen = async () => {
       <header className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-3">
-            <Link href="/comandas">
+            <Link href="/mapa">
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
