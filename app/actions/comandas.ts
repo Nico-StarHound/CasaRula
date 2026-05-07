@@ -238,6 +238,63 @@ export async function setPedidaCuenta(orderId: string): Promise<{ success: boole
   return { success: true }
 }
 
+/**
+ * Enqueue a "cuenta provisional" print job — the bill we hand to diners
+ * before they pay (informal, no ticket number, no payment info).
+ */
+export async function printCuentaProvisional(orderId: string): Promise<{ success: boolean }> {
+  const supabase = await createClient()
+  const restaurantId = await getRestaurantId()
+  if (!restaurantId) return { success: false }
+
+  // Fetch order + items + table
+  const { data: order } = await supabase
+    .from('orders')
+    .select('id, table_id, comensales, total')
+    .eq('id', orderId)
+    .single()
+  if (!order) return { success: false }
+
+  const { data: items } = await supabase
+    .from('order_items')
+    .select('name, quantity, price, es_invitacion')
+    .eq('order_id', orderId)
+    .neq('status', 'cancelled')
+    .order('created_at')
+
+  const { data: table } = order.table_id
+    ? await supabase.from('tables').select('label').eq('id', order.table_id).single()
+    : { data: null }
+
+  const subtotalRaw = (items || [])
+    .filter(i => !i.es_invitacion)
+    .reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
+  const subtotal = subtotalRaw / 1.10
+  const iva = subtotalRaw - subtotal
+
+  await enqueuePrintJob({
+    restaurantId,
+    kind: 'cuenta_provisional',
+    printerType: 'caja',
+    orderId,
+    payload: {
+      table_label: table?.label || 'Mesa',
+      comensales: order.comensales || 1,
+      items: (items || []).map(i => ({
+        name: i.name,
+        quantity: i.quantity,
+        price: i.es_invitacion ? 0 : Number(i.price),
+      })),
+      subtotal: Math.round(subtotal * 100) / 100,
+      iva: Math.round(iva * 100) / 100,
+      total: Math.round(subtotalRaw * 100) / 100,
+      printed_at: new Date().toISOString(),
+    },
+  })
+
+  return { success: true }
+}
+
 export async function updateOrderServiceConfig(
   orderId: string,
   config: {

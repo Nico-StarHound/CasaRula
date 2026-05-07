@@ -8,7 +8,7 @@
 import 'dotenv/config'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { ESCPOS } from './escpos.js'
-import { renderComanda, renderFactura, renderAnulacion } from './renderers.js'
+import { renderComanda, renderFactura, renderAnulacion, renderCuentaProvisional } from './renderers.js'
 import { sendToPrinter, type PrinterTarget } from './printer.js'
 
 const SUPABASE_URL = required('SUPABASE_URL')
@@ -86,6 +86,9 @@ async function processJob(job: {
         break
       case 'factura':
         bytes = renderFactura(job.payload)
+        break
+      case 'cuenta_provisional':
+        bytes = renderCuentaProvisional(job.payload)
         break
       case 'test':
         bytes = new ESCPOS().init().align('center').bold(true).line('CASA RULA - TEST OK').feed(3).cut().build()

@@ -258,29 +258,20 @@ const handleSendToKitchen = async () => {
     await setOrderUrgente(order.id, true)
   }
   
-  // Generate kitchen ticket HTML before sending (while items still have pending status)
-  const ticketHTML = generateKitchenTicketHTML(pendingItems, tableName, order.comensales)
-    
-    await sendToKitchen(order.id)
-    const updated = await getOrCreateOrder(tableId)
-    setOrder(updated)
-    setSending(false)
-    setSheetOpen(false)
-    
-    // Open print window for kitchen ticket
-    const printWindow = window.open('', '_blank')
-    if (printWindow) {
-      printWindow.document.write(ticketHTML)
-      printWindow.document.close()
-      printWindow.print()
-    }
-    
-    // Show toast and navigate
-    setShowToast(true)
-    setTimeout(() => {
-      router.push('/comandas')
-    }, 1000)
-  }
+  // Send to kitchen — print daemon will pick up the print job from Supabase
+  // and physically print on the kitchen/bar printers via ESC/POS.
+  await sendToKitchen(order.id)
+  const updated = await getOrCreateOrder(tableId)
+  setOrder(updated)
+  setSending(false)
+  setSheetOpen(false)
+  
+  // Show toast and navigate
+  setShowToast(true)
+  setTimeout(() => {
+    router.push('/comandas')
+  }, 1000)
+}
 
   const handleCancelItem = async (itemId: string) => {
     await cancelOrderItem(itemId, cancelMotivo || undefined)

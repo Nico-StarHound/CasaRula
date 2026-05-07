@@ -10,6 +10,7 @@ export type PrintJobKind =
   | 'comanda_barra'
   | 'anulacion'
   | 'factura'
+  | 'cuenta_provisional'
   | 'test'
 
 export type PrinterType = 'cocina' | 'barra' | 'caja'

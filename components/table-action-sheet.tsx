@@ -48,7 +48,7 @@ import {
 import type { Table, TableStatus, Reservation, StaffRole } from '@/lib/types'
 import { updateTable } from '@/app/actions/floor-plan'
 import { updateReservationStatus } from '@/app/actions/reservations'
-import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, setPedidaCuenta, type Order } from '@/app/actions/comandas'
+import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, setPedidaCuenta, printCuentaProvisional, type Order } from '@/app/actions/comandas'
 import { cn } from '@/lib/utils'
 
 interface TableActionSheetProps {
@@ -425,16 +425,10 @@ const handleVerComanda = () => {
   const handleImprimirCuenta = async () => {
     if (!table || !tableOpenOrder) return
     setPrintingCuenta(true)
-    
-    // Generate and print the cuenta
-    const html = generateCuentaHTML(tableOpenOrder.items, table.label, tableOpenOrder.total)
-    const printWindow = window.open('', '_blank')
-    if (printWindow) {
-      printWindow.document.write(html)
-      printWindow.document.close()
-      printWindow.print()
-    }
-    
+
+    // Enqueue print job — daemon picks it up and prints physically.
+    await printCuentaProvisional(tableOpenOrder.id)
+
     // Mark cuenta as pedida
     await setPedidaCuenta(tableOpenOrder.id)
     

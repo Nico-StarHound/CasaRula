@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   -- What kind of ticket and where it goes
   -- kind:        what to render
   -- printer_type: which physical printer should print it
-  kind TEXT NOT NULL CHECK (kind IN ('comanda_cocina', 'comanda_barra', 'anulacion', 'factura', 'test')),
+  kind TEXT NOT NULL CHECK (kind IN ('comanda_cocina', 'comanda_barra', 'anulacion', 'factura', 'cuenta_provisional', 'test')),
   printer_type TEXT NOT NULL CHECK (printer_type IN ('cocina', 'barra', 'caja')),
 
   -- Optional explicit printer (if null, daemon picks first online printer of printer_type)

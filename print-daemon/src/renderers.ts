@@ -49,6 +49,16 @@ interface AnulacionPayload {
   printed_at: string
 }
 
+interface CuentaProvisionalPayload {
+  table_label: string
+  comensales: number
+  items: { name: string; quantity: number; price: number }[]
+  subtotal: number
+  iva: number
+  total: number
+  printed_at: string
+}
+
 function fmtTime(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleString('es-ES', {
@@ -222,5 +232,48 @@ export function renderFactura(payload: FacturaPayload): Buffer {
 
   e.feed(3).cut()
 
+  return e.build()
+}
+
+// =====================================================================
+// Cuenta provisional (preview, no payment info)
+// =====================================================================
+export function renderCuentaProvisional(payload: CuentaProvisionalPayload): Buffer {
+  const e = new ESCPOS()
+  e.init()
+
+  e.align('center').bold(true).size(2, 2)
+  e.line('CUENTA')
+  e.resetSize().bold(false)
+
+  e.align('left').hr('=')
+
+  e.row(`Mesa: ${payload.table_label}`, `${payload.comensales} pax`)
+  e.line(fmtTime(payload.printed_at))
+  e.hr('-')
+
+  for (const item of payload.items) {
+    const lineTotal = item.price * item.quantity
+    const left = `${item.quantity}x ${item.name}`
+    const right = money(lineTotal)
+    if (left.length + right.length + 1 > LINE_WIDTH) {
+      e.line(left)
+      e.row('', right)
+    } else {
+      e.row(left, right)
+    }
+  }
+
+  e.hr('-')
+  e.row('Subtotal:', money(payload.subtotal))
+  e.row('IVA (10%):', money(payload.iva))
+  e.bold(true).size(1, 2)
+  e.row('TOTAL:', money(payload.total))
+  e.resetSize().bold(false)
+
+  e.newline()
+  e.align('center').line('* No es factura *').align('left')
+
+  e.feed(3).cut()
   return e.build()
 }
