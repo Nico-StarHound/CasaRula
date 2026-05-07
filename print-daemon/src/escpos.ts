@@ -1,24 +1,31 @@
 // Minimal ESC/POS command builder for thermal printers (Munbyn ITPP047P, Epson, Star, etc.)
 // 80mm paper, 48 chars per line in normal width.
 
+import iconv from 'iconv-lite'
+
 const ESC = 0x1b
 const GS = 0x1d
 const LF = 0x0a
 
 export const LINE_WIDTH = 48 // chars at normal width on 80mm paper
 
+// CP858 = CP850 + Euro sign. Best fit for Spanish (ñ, áéíóú, ¿¡, €).
+// Tell the printer to use code page 19 (CP858) so it interprets our bytes correctly.
+const SET_CODEPAGE_CP858 = Buffer.from([ESC, 0x74, 19])
+
 export class ESCPOS {
   private chunks: Buffer[] = []
 
   init() {
     this.chunks.push(Buffer.from([ESC, 0x40])) // ESC @ — initialize
+    this.chunks.push(SET_CODEPAGE_CP858)
     return this
   }
 
   text(s: string) {
-    // CP858 / CP437 are common. We use latin1 which covers ñ, accents OK on most
-    // Munbyn/Epson defaults. If chars come out wrong, switch to a proper iconv-lite encoding.
-    this.chunks.push(Buffer.from(s, 'latin1'))
+    // Encode the JS string (UTF-16 internally) into CP858 bytes.
+    // Characters not representable in CP858 will be replaced with '?'.
+    this.chunks.push(iconv.encode(s, 'cp858'))
     return this
   }
 

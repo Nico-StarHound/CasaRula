@@ -7,6 +7,7 @@
 
 import 'dotenv/config'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { ESCPOS } from './escpos.js'
 import { renderComanda, renderFactura, renderAnulacion } from './renderers.js'
 import { sendToPrinter, type PrinterTarget } from './printer.js'
 
@@ -87,7 +88,7 @@ async function processJob(job: {
         bytes = renderFactura(job.payload)
         break
       case 'test':
-        bytes = Buffer.from('\x1B@CASA RULA - TEST OK\n\n\n\x1DV\x01', 'latin1')
+        bytes = new ESCPOS().init().align('center').bold(true).line('CASA RULA - TEST OK').feed(3).cut().build()
         break
       default:
         throw new Error(`Unknown job kind: ${job.kind}`)
