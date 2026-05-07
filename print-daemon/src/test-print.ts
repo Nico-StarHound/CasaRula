@@ -18,7 +18,7 @@ if (!ip) {
 
 console.log(`Sending test ticket to ${ip}:${port}…`)
 
-const sampleComanda = renderComanda(
+const sampleComandaNormal = renderComanda(
   {
     table_label: '12',
     staff_name: 'Nico',
@@ -29,6 +29,22 @@ const sampleComanda = renderComanda(
       { name: 'Croquetas de jamón', quantity: 2, modifiers: [], notes: 'Sin perejil' },
       { name: 'Ensaladilla rusa', quantity: 1, modifiers: [] },
       { name: 'Solomillo al whisky', quantity: 1, modifiers: [{ name: 'Poco hecho' }] },
+    ],
+    printed_at: new Date().toISOString(),
+  },
+  'cocina'
+)
+
+const sampleComandaUrgente = renderComanda(
+  {
+    table_label: '7',
+    staff_name: 'Maria',
+    comensales: 2,
+    nota_mesa: null,
+    urgente: true,
+    items: [
+      { name: 'Tortilla española', quantity: 1, modifiers: [] },
+      { name: 'Pulpo a la gallega', quantity: 1, modifiers: [] },
     ],
     printed_at: new Date().toISOString(),
   },
@@ -64,8 +80,10 @@ const sampleFactura = renderFactura({
 
 async function run() {
   const target = { ip: ip!, port }
-  console.log('— Comanda cocina')
-  await sendToPrinter(target, sampleComanda)
+  console.log('— Comanda cocina (con nota)')
+  await sendToPrinter(target, sampleComandaNormal)
+  console.log('— Comanda cocina (URGENTE)')
+  await sendToPrinter(target, sampleComandaUrgente)
   console.log('— Factura')
   await sendToPrinter(target, sampleFactura)
   console.log('Done. ✓')

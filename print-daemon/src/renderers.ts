@@ -70,63 +70,90 @@ function fmtTime(iso: string): string {
   })
 }
 
+function fmtTimeShort(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+}
+
 function money(n: number): string {
   return n.toFixed(2) + ' €'
 }
 
 // =====================================================================
 // Comanda (cocina or barra)
+// Design B: big centered MESA, items in size(1,2), notes UP TOP (allergies
+// must be visible before cooking starts), URGENT as inverted black band.
 // =====================================================================
 export function renderComanda(payload: ComandaPayload, kind: 'cocina' | 'barra'): Buffer {
   const e = new ESCPOS()
   e.init()
 
-  // Header — big title with destination
+  // ── URGENTE band (only if applicable) — full-width inverted, max attention
+  if (payload.urgente) {
+    const label = '  *** URGENTE ***  '
+    const pad = Math.max(0, Math.floor((LINE_WIDTH - label.length) / 2))
+    const padded = ' '.repeat(pad) + label + ' '.repeat(LINE_WIDTH - pad - label.length)
+    e.bold(true).invert(true).size(1, 2)
+    e.line(padded)
+    e.resetSize().invert(false).bold(false)
+    e.newline()
+  }
+
+  // ── Header
   e.align('center').bold(true).size(2, 2)
   e.line(kind === 'cocina' ? 'COCINA' : 'BARRA')
   e.resetSize().bold(false)
+  e.align('left').hr('=')
 
-  if (payload.urgente) {
-    e.bold(true).size(2, 1).line('*** URGENTE ***').resetSize().bold(false)
-  }
-
-  e.align('left')
-  e.hr('=')
-
-  // Mesa + comensales (big so cocina sees it from across the room)
+  // ── Mesa block (big, centered, framed)
+  e.newline()
+  e.align('center')
+  e.line('┌─────────────┐')
   e.bold(true).size(2, 2)
-  e.line(`Mesa ${payload.table_label}`)
+  // Center "MESA NN" inside the box visually — the ESC/POS center alignment
+  // does the heavy lifting since size(2,2) is also centered by the printer.
+  e.line(`MESA  ${payload.table_label}`)
   e.resetSize().bold(false)
-  e.line(`${payload.comensales} pax  ·  ${payload.staff_name || '—'}`)
-  e.line(fmtTime(payload.printed_at))
+  e.line('└─────────────┘')
+  e.newline()
 
+  // Comensales · staff · time, all on one centered line
+  const meta = `${payload.comensales} pax  ·  ${payload.staff_name || '—'}  ·  ${fmtTimeShort(payload.printed_at)}`
+  e.line(meta)
+  e.align('left')
+
+  // ── Nota de mesa ARRIBA (allergies, requests — must be seen before cooking)
   if (payload.nota_mesa) {
     e.newline()
-    e.bold(true).line('Nota mesa:').bold(false)
-    e.line(payload.nota_mesa)
+    e.hr('-')
+    e.bold(true).invert(true).size(1, 2)
+    e.line(' NOTA MESA ')
+    e.resetSize().invert(false).bold(false)
+    e.bold(true).line(payload.nota_mesa).bold(false)
   }
 
   e.hr('=')
+  e.newline()
 
-  // Items — big so they're readable
+  // ── Items (size 1,2 — double height, normal width — readable from afar)
   for (const item of payload.items) {
     e.bold(true).size(1, 2)
-    e.line(`${item.quantity}x  ${item.name}`)
+    e.line(`  ${item.quantity}x  ${item.name.toUpperCase()}`)
     e.resetSize().bold(false)
 
     if (item.modifiers && item.modifiers.length > 0) {
       for (const m of item.modifiers) {
-        e.line(`   - ${m.name}`)
+        e.line(`        » ${m.name}`)
       }
     }
     if (item.notes) {
-      e.line(`   ! ${item.notes}`)
+      e.line(`        » ${item.notes}`)
     }
     e.newline()
   }
 
-  e.hr('-')
-  e.feed(2).cut()
+  e.hr('=')
+  e.feed(3).cut()
 
   return e.build()
 }

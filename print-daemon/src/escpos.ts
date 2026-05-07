@@ -80,6 +80,12 @@ export class ESCPOS {
     return this.newline(n)
   }
 
+  /** Reverse video: white text on black background. Hugely visible. */
+  invert(on: boolean) {
+    this.chunks.push(Buffer.from([GS, 0x42, on ? 1 : 0]))
+    return this
+  }
+
   /** Beep — useful for kitchen tickets so cocina notice them */
   beep(times = 2, durationDeciseconds = 4) {
     this.chunks.push(Buffer.from([ESC, 0x42, times, durationDeciseconds]))
