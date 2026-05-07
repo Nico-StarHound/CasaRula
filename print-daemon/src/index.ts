@@ -19,7 +19,7 @@ const RESTAURANT_ID = required('RESTAURANT_ID')
 const DRY_RUN = process.env.DRY_RUN === 'true'
 const DEBUG_DUMP = process.env.DEBUG_DUMP === 'true' || DRY_RUN
 const PRINTER_PORT = Number(process.env.PRINTER_PORT || 9100)
-const CHUNK_DELAY_MS = Number(process.env.CHUNK_DELAY_MS || 60)
+const CHUNK_DELAY_MS = Number(process.env.CHUNK_DELAY_MS || 30)
 
 const ENV_PRINTERS: Record<string, string | undefined> = {
   cocina: process.env.PRINTER_COCINA_IP,
