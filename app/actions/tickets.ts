@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { enqueuePrintJob } from './print-jobs'
 
 export interface TicketItem {
   name: string
@@ -83,6 +84,51 @@ export async function createTicket(data: {
     .from('orders')
     .update({ status: 'paid', closed_at: new Date().toISOString() })
     .eq('id', data.order_id)
+
+  // Fetch restaurant_config snapshot for the printed factura
+  const { data: config } = await supabase
+    .from('restaurant_config')
+    .select('titular, nif, direccion, codigo_postal, ciudad, telefono, pie_ticket')
+    .eq('restaurant_id', restaurant.id)
+    .single()
+
+  const { data: restaurantRow } = await supabase
+    .from('restaurants')
+    .select('name')
+    .eq('id', restaurant.id)
+    .single()
+
+  // Enqueue factura print job → caja printer
+  await enqueuePrintJob({
+    restaurantId: restaurant.id,
+    kind: 'factura',
+    printerType: 'caja',
+    orderId: data.order_id,
+    ticketId: ticket.id,
+    payload: {
+      numero: ticket.numero,
+      table_label: data.table_label,
+      staff_name: data.staff_name,
+      comensales: data.comensales,
+      items: data.items,
+      subtotal: Math.round(subtotal * 100) / 100,
+      iva: Math.round(iva * 100) / 100,
+      total: Math.round(total * 100) / 100,
+      payment_method: data.payment_method,
+      efectivo_entregado: data.efectivo_entregado || null,
+      cambio: cambio ? Math.round(cambio * 100) / 100 : null,
+      printed_at: new Date().toISOString(),
+      restaurant: {
+        name: restaurantRow?.name || 'Casa Rula',
+        nif: config?.nif || null,
+        direccion: config
+          ? [config.direccion, config.codigo_postal, config.ciudad].filter(Boolean).join(', ')
+          : null,
+        telefono: config?.telefono || null,
+        pie_ticket: config?.pie_ticket || null,
+      },
+    },
+  })
 
   return {
     ...ticket,

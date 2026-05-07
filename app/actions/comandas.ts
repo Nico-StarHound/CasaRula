@@ -3,6 +3,7 @@
 // Comandas order management actions v3
 import { createClient } from '@/lib/supabase/server'
 import type { Table } from '@/lib/types'
+import { enqueuePrintJob, type ComandaTicketItem } from './print-jobs'
 
 interface TableWithOrder extends Table {
   hasOpenOrder: boolean
@@ -503,10 +504,10 @@ export async function sendToKitchen(orderId: string): Promise<{ success: boolean
     .eq('order_id', orderId)
     .eq('status', 'pending')
 
-  // Get table label for printing
+  // Get table + order metadata for the print payload
   const { data: order } = await supabase
     .from('orders')
-    .select('table_id')
+    .select('table_id, comensales, nota_mesa, urgente, staff_id')
     .eq('id', orderId)
     .single()
 
@@ -516,27 +517,50 @@ export async function sendToKitchen(orderId: string): Promise<{ success: boolean
     .eq('id', order?.table_id)
     .single()
 
+  const { data: staff } = order?.staff_id
+    ? await supabase.from('staff').select('name').eq('id', order.staff_id).single()
+    : { data: null }
+
   const tableLabel = table?.label || 'Mesa'
+  const printedAt = new Date().toISOString()
 
-  // Send to printers (placeholder - catches errors silently)
+  // Enqueue print jobs (the daemon picks them up via Realtime).
+  // We enqueue ONE job per destination that has items.
   if (restaurantId) {
-    const { data: printers } = await supabase
-      .from('printers')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .eq('is_online', true)
+    const buildPayload = (items: typeof pendingItems): ComandaTicketItem[] =>
+      items.map(i => ({
+        name: i.name,
+        quantity: i.quantity,
+        notes: null, // notes/modifiers are on the row, but we keep payload minimal here
+      }))
 
-    if (printers) {
-      for (const printer of printers) {
-        const items = printer.type === 'barra' ? barraItems : cocinaItems
-        if (items.length > 0) {
-          fetch(`http://${printer.ip_address}:${printer.port}/print`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items, table: tableLabel })
-          }).catch(() => console.warn(`Printer ${printer.name} offline`))
-        }
-      }
+    const baseMeta = {
+      table_label: tableLabel,
+      staff_name: staff?.name || null,
+      comensales: order?.comensales || 1,
+      nota_mesa: order?.nota_mesa || null,
+      urgente: order?.urgente || false,
+      printed_at: printedAt,
+    }
+
+    if (cocinaItems.length > 0) {
+      await enqueuePrintJob({
+        restaurantId,
+        kind: 'comanda_cocina',
+        printerType: 'cocina',
+        orderId,
+        payload: { ...baseMeta, items: buildPayload(cocinaItems) },
+      })
+    }
+
+    if (barraItems.length > 0) {
+      await enqueuePrintJob({
+        restaurantId,
+        kind: 'comanda_barra',
+        printerType: 'barra',
+        orderId,
+        payload: { ...baseMeta, items: buildPayload(barraItems) },
+      })
     }
   }
 
@@ -570,10 +594,10 @@ export async function cancelOrderItem(
 ): Promise<{ success: boolean }> {
   const supabase = await createClient()
   
-  // Get the order_id before updating
+  // Get the item details before updating (need order_id, status, name, qty, target)
   const { data: item } = await supabase
     .from('order_items')
-    .select('order_id')
+    .select('order_id, name, quantity, status, printer_target')
     .eq('id', itemId)
     .single()
 
@@ -586,9 +610,48 @@ export async function cancelOrderItem(
     })
     .eq('id', itemId)
 
-  // Recalculate order total
   if (item) {
+    // Recalculate order total
     await recalculateOrderTotal(item.order_id)
+
+    // If item was already sent to kitchen/bar, fire an "anulación" ticket
+    // so cocina/barra knows to retire the dish.
+    const wasSent = item.status === 'in_kitchen' || item.status === 'ready' || item.status === 'served'
+    if (wasSent) {
+      const restaurantId = await getRestaurantId()
+      const target = (item.printer_target === 'barra' ? 'barra' : 'cocina') as 'cocina' | 'barra'
+
+      // Get table label + staff for context
+      const { data: order } = await supabase
+        .from('orders')
+        .select('table_id, staff_id')
+        .eq('id', item.order_id)
+        .single()
+
+      const { data: table } = order?.table_id
+        ? await supabase.from('tables').select('label').eq('id', order.table_id).single()
+        : { data: null }
+
+      const { data: staff } = order?.staff_id
+        ? await supabase.from('staff').select('name').eq('id', order.staff_id).single()
+        : { data: null }
+
+      if (restaurantId) {
+        await enqueuePrintJob({
+          restaurantId,
+          kind: 'anulacion',
+          printerType: target,
+          orderId: item.order_id,
+          payload: {
+            table_label: table?.label || 'Mesa',
+            staff_name: staff?.name || null,
+            motivo: motivo || null,
+            items: [{ name: item.name, quantity: item.quantity }],
+            printed_at: new Date().toISOString(),
+          },
+        })
+      }
+    }
   }
 
   return { success: true }
