@@ -301,7 +301,7 @@ export async function updateOrderServiceConfig(
   config: {
     nota_mesa?: string
     orden_servicio: OrdenServicio
-    rondas?: string[][]
+    rondas?: string[][] | null
   }
 ): Promise<{ success: boolean }> {
   const supabase = await createClient()

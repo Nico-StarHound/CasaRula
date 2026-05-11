@@ -4,7 +4,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap } from 'lucide-react'
+import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -66,6 +66,12 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
   const [serviceMode, setServiceMode] = useState<OrdenServicio>('sin_orden')
   const [serviceNote, setServiceNote] = useState('')
   const [serviceRondas, setServiceRondas] = useState<string[][]>([])
+  // New unified UI: ordered list of "tandas" (rounds). Each has a list of
+  // item ids and a "simultaneous" flag (kitchen waits for all items before serving).
+  // - 1 tanda + simultaneous=true  → todo_junto
+  // - 1 tanda + simultaneous=false → sin_orden
+  // - N tandas (any flag)          → por_rondas
+  const [tandas, setTandas] = useState<Array<{ items: string[]; simultaneous: boolean }>>([])
   const [savingService, setSavingService] = useState(false)
   const [showServiceSavedToast, setShowServiceSavedToast] = useState(false)
   
@@ -295,26 +301,69 @@ const handleSendToKitchen = async () => {
   }
 
   const openServiceSheet = () => {
-    // Initialize state from current order
-    setServiceMode(order?.orden_servicio || 'sin_orden')
+    // Initialize from the saved order. We collapse the four legacy modes into
+    // the new "tandas" representation:
+    //   sin_orden    → 1 tanda, simultaneous=false
+    //   todo_junto   → 1 tanda, simultaneous=true
+    //   por_rondas   → N tandas (preserve order), simultaneous=true on all
+    //   uno_a_uno    → N tandas (1 item each), simultaneous=false
     setServiceNote(order?.nota_mesa || '')
-    // Initialize rondas: all pending items in one ronda by default
-    if (order?.rondas && order.rondas.length > 0) {
-      setServiceRondas(order.rondas)
+
+    const allItemIds = pendingItems.map(i => i.id)
+    const mode = order?.orden_servicio || 'sin_orden'
+    const savedRondas = order?.rondas || []
+
+    if (mode === 'sin_orden') {
+      setTandas([{ items: allItemIds, simultaneous: false }])
+    } else if (mode === 'todo_junto') {
+      setTandas([{ items: allItemIds, simultaneous: true }])
+    } else if (mode === 'por_rondas' && savedRondas.length > 0) {
+      // Reuse saved rondas, but also pick up any items added after the config
+      // was last saved (so they don't silently disappear from the UI).
+      const known = new Set(savedRondas.flat())
+      const extra = allItemIds.filter(id => !known.has(id))
+      const restored = savedRondas
+        .map(items => ({ items: items.filter(id => allItemIds.includes(id)), simultaneous: true }))
+        .filter(t => t.items.length > 0)
+      if (extra.length > 0) {
+        restored.push({ items: extra, simultaneous: true })
+      }
+      setTandas(restored.length > 0 ? restored : [{ items: allItemIds, simultaneous: false }])
+    } else if (mode === 'uno_a_uno' && savedRondas[0]) {
+      setTandas(savedRondas[0].map(id => ({ items: [id], simultaneous: false })))
     } else {
-      setServiceRondas([pendingItems.map(i => i.id)])
+      setTandas([{ items: allItemIds, simultaneous: false }])
     }
+
     setServiceSheetOpen(true)
   }
 
   const handleSaveServiceConfig = async () => {
     if (!order) return
     setSavingService(true)
+
+    // Map "tandas" back to the legacy fields. Empty tandas are dropped.
+    const filled = tandas.filter(t => t.items.length > 0)
+    let mode: OrdenServicio
+    let rondas: string[][] | null
+    if (filled.length === 0) {
+      mode = 'sin_orden'
+      rondas = null
+    } else if (filled.length === 1) {
+      mode = filled[0].simultaneous ? 'todo_junto' : 'sin_orden'
+      rondas = null
+    } else {
+      mode = 'por_rondas'
+      rondas = filled.map(t => t.items)
+    }
+
     await updateOrderServiceConfig(order.id, {
       nota_mesa: serviceNote,
-      orden_servicio: serviceMode,
-      rondas: serviceMode === 'por_rondas' ? serviceRondas : null
+      orden_servicio: mode,
+      rondas: rondas
     })
+    setServiceMode(mode)
+    setServiceRondas(rondas || [])
     const updated = await getOrCreateOrder(tableId)
     setOrder(updated)
     setSavingService(false)
@@ -323,63 +372,79 @@ const handleSendToKitchen = async () => {
     setTimeout(() => setShowServiceSavedToast(false), 2000)
   }
 
-  // Rondas management
-  const moveItemBetweenRondas = (itemId: string, direction: 'up' | 'down') => {
-    const newRondas = [...serviceRondas]
-    for (let i = 0; i < newRondas.length; i++) {
-      const idx = newRondas[i].indexOf(itemId)
-      if (idx !== -1) {
-        newRondas[i] = newRondas[i].filter(id => id !== itemId)
-        if (direction === 'up' && i > 0) {
-          newRondas[i - 1].push(itemId)
-        } else if (direction === 'down' && i < newRondas.length - 1) {
-          newRondas[i + 1].push(itemId)
-        } else {
-          // Can't move, put it back
-          newRondas[i].splice(idx, 0, itemId)
-        }
-        break
+  // Tandas helpers — operate on the new unified state
+  const moveItem = (itemId: string, direction: 'up' | 'down') => {
+    setTandas(prev => {
+      const next = prev.map(t => ({ ...t, items: [...t.items] }))
+      // Locate item
+      let tandaIdx = -1
+      let itemIdx = -1
+      for (let i = 0; i < next.length; i++) {
+        const idx = next[i].items.indexOf(itemId)
+        if (idx !== -1) { tandaIdx = i; itemIdx = idx; break }
       }
-    }
-    // Remove empty rondas
-    setServiceRondas(newRondas.filter(r => r.length > 0))
+      if (tandaIdx === -1) return prev
+
+      if (direction === 'up') {
+        if (itemIdx > 0) {
+          // Swap inside the same tanda
+          const arr = next[tandaIdx].items
+          ;[arr[itemIdx - 1], arr[itemIdx]] = [arr[itemIdx], arr[itemIdx - 1]]
+        } else if (tandaIdx > 0) {
+          // Move to end of previous tanda
+          next[tandaIdx].items.splice(itemIdx, 1)
+          next[tandaIdx - 1].items.push(itemId)
+        }
+      } else {
+        const arr = next[tandaIdx].items
+        if (itemIdx < arr.length - 1) {
+          ;[arr[itemIdx], arr[itemIdx + 1]] = [arr[itemIdx + 1], arr[itemIdx]]
+        } else if (tandaIdx < next.length - 1) {
+          next[tandaIdx].items.splice(itemIdx, 1)
+          next[tandaIdx + 1].items.unshift(itemId)
+        }
+      }
+      return next.filter(t => t.items.length > 0)
+    })
   }
 
-  const addRonda = () => {
-    setServiceRondas([...serviceRondas, []])
+  const toggleTandaSimultaneous = (idx: number) => {
+    setTandas(prev => prev.map((t, i) => i === idx ? { ...t, simultaneous: !t.simultaneous } : t))
   }
 
-  const removeRonda = (index: number) => {
-    if (serviceRondas.length <= 1) return
-    const newRondas = [...serviceRondas]
-    // Move items to previous ronda
-    if (newRondas[index].length > 0 && index > 0) {
-      newRondas[index - 1] = [...newRondas[index - 1], ...newRondas[index]]
-    }
-    newRondas.splice(index, 1)
-    setServiceRondas(newRondas)
+  // Split: take everything from `splitAt` index onwards in tanda `tandaIdx`
+  // and move it to a new tanda right after.
+  const splitTandaAt = (tandaIdx: number, splitAt: number) => {
+    setTandas(prev => {
+      const next = prev.map(t => ({ ...t, items: [...t.items] }))
+      const tail = next[tandaIdx].items.splice(splitAt)
+      if (tail.length === 0) return prev
+      next.splice(tandaIdx + 1, 0, { items: tail, simultaneous: next[tandaIdx].simultaneous })
+      return next
+    })
   }
 
-  const setAllInOneRonda = () => {
-    setServiceRondas([pendingItems.map(i => i.id)])
+  // Merge tanda `tandaIdx` into the previous one.
+  const mergeTandaWithPrev = (tandaIdx: number) => {
+    if (tandaIdx === 0) return
+    setTandas(prev => {
+      const next = prev.map(t => ({ ...t, items: [...t.items] }))
+      next[tandaIdx - 1].items.push(...next[tandaIdx].items)
+      next.splice(tandaIdx, 1)
+      return next
+    })
   }
 
-  const setOnePerRonda = () => {
-    setServiceRondas(pendingItems.map(i => [i.id]))
-  }
-
-  const moveItemInOrder = (itemId: string, direction: 'up' | 'down') => {
-    // For uno_a_uno mode: reorder within single ronda
-    const items = [...serviceRondas[0] || []]
-    const idx = items.indexOf(itemId)
-    if (idx === -1) return
-    if (direction === 'up' && idx > 0) {
-      [items[idx - 1], items[idx]] = [items[idx], items[idx - 1]]
-    } else if (direction === 'down' && idx < items.length - 1) {
-      [items[idx], items[idx + 1]] = [items[idx + 1], items[idx]]
-    }
-    setServiceRondas([items])
-  }
+  // Legacy helpers kept for any external callers that might still rely on them.
+  // No longer used by the new UI.
+  const moveItemBetweenRondas = (_itemId: string, _direction: 'up' | 'down') => { /* legacy */ }
+  const addRonda = () => { /* legacy */ }
+  const removeRonda = (_index: number) => { /* legacy */ }
+  const setAllInOneRonda = () => { /* legacy */ }
+  const setOnePerRonda = () => { /* legacy */ }
+  const moveItemInOrder = (_itemId: string, _direction: 'up' | 'down') => { /* legacy */ }
+  void moveItemBetweenRondas; void addRonda; void removeRonda
+  void setAllInOneRonda; void setOnePerRonda; void moveItemInOrder
 
   const pendingItems = order?.items.filter(i => i.status === 'pending') || []
   const sentItems = order?.items.filter(i => i.status !== 'pending') || []
@@ -1040,92 +1105,70 @@ const handleSendToKitchen = async () => {
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-4 py-3">
             <div className="space-y-6">
-              {/* Mode selector */}
+              {/* Tandas — single unified UI replaces the old mode selector. */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">Modo de servicio</label>
-                <ToggleGroup 
-                  type="single" 
-                  value={serviceMode} 
-                  onValueChange={(v) => v && setServiceMode(v as OrdenServicio)}
-                  className="grid grid-cols-2 gap-2"
-                >
-                  <ToggleGroupItem value="sin_orden" className="h-12 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                    Sin orden
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="todo_junto" className="h-12 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                    Todo junto
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="por_rondas" className="h-12 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                    Por rondas
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="uno_a_uno" className="h-12 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
-                    Uno a uno
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Tandas de salida</label>
+                  <span className="text-xs text-muted-foreground">
+                    {tandas.length} {tandas.length === 1 ? 'tanda' : 'tandas'}
+                  </span>
+                </div>
 
-              {/* Mode-specific content */}
-              <div className="rounded-lg border p-4 bg-muted/30">
-                {serviceMode === 'sin_orden' && (
-                  <p className="text-sm text-muted-foreground">
-                    La cocina servira los platos segun vayan estando listos.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Usa las flechas para mover platos. Pulsa <span className="inline-flex items-center gap-0.5"><Scissors className="h-3 w-3 inline" /> Separar</span> entre dos platos para dividir la tanda.
+                </p>
 
-                {serviceMode === 'todo_junto' && (
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      La cocina esperara a tener todos los platos listos antes de servir.
-                    </p>
-                    <div className="space-y-1">
-                      {pendingItems.map(item => (
-                        <div key={item.id} className="text-sm py-1">
-                          {item.quantity}x {item.name}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {serviceMode === 'por_rondas' && (
-                  <div className="space-y-4">
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={setAllInOneRonda}>
-                        Todo en una ronda
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={setOnePerRonda}>
-                        Una ronda por plato
-                      </Button>
-                    </div>
-                    
-                    {serviceRondas.map((rondaItems, rondaIdx) => (
-                      <div key={rondaIdx} className="border rounded-lg p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">Ronda {rondaIdx + 1}</span>
-                          {serviceRondas.length > 1 && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-destructive h-8"
-                              onClick={() => removeRonda(rondaIdx)}
+                <div className="space-y-3">
+                  {tandas.map((tanda, tandaIdx) => (
+                    <div key={tandaIdx} className="border-2 rounded-lg overflow-hidden">
+                      {/* Tanda header */}
+                      <div className="flex items-center justify-between bg-muted/40 px-3 py-2 border-b">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">
+                            Tanda {tandaIdx + 1}
+                          </span>
+                          {tandaIdx > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => mergeTandaWithPrev(tandaIdx)}
                             >
-                              Eliminar
+                              ↑ Unir con anterior
                             </Button>
                           )}
                         </div>
-                        {rondaItems.map(itemId => {
+                        <Button
+                          variant={tanda.simultaneous ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-8 text-xs gap-1"
+                          onClick={() => toggleTandaSimultaneous(tandaIdx)}
+                        >
+                          <Users className="h-3 w-3" />
+                          {tanda.simultaneous ? 'Todo a la vez' : 'Según lista'}
+                        </Button>
+                      </div>
+
+                      {/* Items in this tanda — vertical cells with arrows + split-after */}
+                      <div className="divide-y">
+                        {tanda.items.map((itemId, itemIdx) => {
                           const item = pendingItems.find(i => i.id === itemId)
                           if (!item) return null
+                          const isLastInTanda = itemIdx === tanda.items.length - 1
+
                           return (
-                            <div key={itemId} className="flex items-center justify-between bg-background rounded p-2">
-                              <span className="text-sm">{item.quantity}x {item.name}</span>
-                              <div className="flex gap-1">
+                            <div key={itemId}>
+                              <div className="flex items-center gap-2 px-3 py-2 bg-background">
+                                <span className="flex-1 text-sm">
+                                  <span className="font-medium">{item.quantity}x</span>{' '}
+                                  {item.name}
+                                </span>
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
-                                  onClick={() => moveItemBetweenRondas(itemId, 'up')}
-                                  disabled={rondaIdx === 0}
+                                  onClick={() => moveItem(itemId, 'up')}
+                                  disabled={tandaIdx === 0 && itemIdx === 0}
                                 >
                                   <ChevronUp className="h-4 w-4" />
                                 </Button>
@@ -1133,68 +1176,39 @@ const handleSendToKitchen = async () => {
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
-                                  onClick={() => moveItemBetweenRondas(itemId, 'down')}
-                                  disabled={rondaIdx === serviceRondas.length - 1}
+                                  onClick={() => moveItem(itemId, 'down')}
+                                  disabled={
+                                    tandaIdx === tandas.length - 1 &&
+                                    itemIdx === tanda.items.length - 1
+                                  }
                                 >
                                   <ChevronDown className="h-4 w-4" />
                                 </Button>
                               </div>
+
+                              {/* Split-after-this-item separator (not on last item of last tanda) */}
+                              {!isLastInTanda && (
+                                <button
+                                  type="button"
+                                  className="w-full text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 py-1 flex items-center justify-center gap-1 border-y border-dashed border-transparent hover:border-muted-foreground/40 transition-colors"
+                                  onClick={() => splitTandaAt(tandaIdx, itemIdx + 1)}
+                                >
+                                  <Scissors className="h-3 w-3" />
+                                  Separar aquí
+                                </button>
+                              )}
                             </div>
                           )
                         })}
-                        {rondaItems.length === 0 && (
-                          <p className="text-xs text-muted-foreground text-center py-2">
-                            Mueve platos aqui
+                        {tanda.items.length === 0 && (
+                          <p className="text-xs text-muted-foreground text-center py-3">
+                            Tanda vacía — se eliminará al guardar
                           </p>
                         )}
                       </div>
-                    ))}
-                    
-                    <Button variant="outline" className="w-full" onClick={addRonda}>
-                      + Anadir ronda
-                    </Button>
-                  </div>
-                )}
-
-                {serviceMode === 'uno_a_uno' && (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Los platos se serviran uno a uno en este orden:
-                    </p>
-                    {(serviceRondas[0] || []).map((itemId, idx) => {
-                      const item = pendingItems.find(i => i.id === itemId)
-                      if (!item) return null
-                      return (
-                        <div key={itemId} className="flex items-center justify-between bg-background rounded p-2">
-                          <span className="text-sm">
-                            <span className="font-bold mr-2">{idx + 1}.</span>
-                            {item.quantity}x {item.name}
-                          </span>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => moveItemInOrder(itemId, 'up')}
-                              disabled={idx === 0}
-                            >
-                              <ChevronUp className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => moveItemInOrder(itemId, 'down')}
-                              disabled={idx === (serviceRondas[0]?.length || 0) - 1}
-                            >
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Nota de mesa */}
