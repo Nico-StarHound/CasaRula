@@ -179,6 +179,7 @@ export interface Order {
   nota_mesa?: string | null
   orden_servicio?: OrdenServicio
   rondas?: string[][] | null
+  opened_at?: string | null
 }
 
 export async function getOpenOrder(tableId: string): Promise<Order | null> {

@@ -12,6 +12,7 @@ import {
   DrawerDescription,
 } from '@/components/ui/drawer'
 import { Spinner } from '@/components/ui/spinner'
+import { SeatedTimer } from '@/components/seated-timer'
 import {
   Users,
   CalendarPlus,
@@ -513,7 +514,7 @@ const handleVerComanda = () => {
                       </span>
                     )}
                   </DrawerTitle>
-                  <DrawerDescription className="flex items-center gap-1">
+                  <DrawerDescription className="flex items-center gap-1 flex-wrap">
                     {showStatusBadge && (
                       <>
                         <span className={cn(
@@ -530,6 +531,12 @@ const handleVerComanda = () => {
                     <span className="text-muted-foreground">
                       {table.capacity} personas · {table.zone}
                     </span>
+                    {status === 'seated' && tableOpenOrder?.opened_at && (
+                      <>
+                        <span className="text-muted-foreground">·</span>
+                        <SeatedTimer startedAt={tableOpenOrder.opened_at} />
+                      </>
+                    )}
                   </DrawerDescription>
                 </div>
               </div>
