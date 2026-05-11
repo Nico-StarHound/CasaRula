@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/sheet'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
-import { Empty } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Search, Phone, Mail, Pencil, Trash2, Star, AlertTriangle } from 'lucide-react'
 import type { Guest } from '@/lib/types'
@@ -156,13 +156,16 @@ export function ClientesClient({ initialGuests }: ClientesClientProps) {
       {/* Guests List */}
       <div className="flex-1 overflow-y-auto p-4">
         {filteredGuests.length === 0 ? (
-          <Empty
-            title={search ? 'Sin resultados' : 'No hay clientes'}
-            description={search 
-              ? 'Intenta con otra búsqueda' 
-              : 'Los clientes se agregan automáticamente al hacer reservas o puedes crearlos manualmente'
-            }
-          />
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>{search ? 'Sin resultados' : 'No hay clientes'}</EmptyTitle>
+              <EmptyDescription>
+                {search
+                  ? 'Intenta con otra búsqueda'
+                  : 'Los clientes se agregan automáticamente al hacer reservas o puedes crearlos manualmente'}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="space-y-3">
             {filteredGuests.map((guest) => (

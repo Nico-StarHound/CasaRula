@@ -40,7 +40,7 @@ const isLate = (time: string, status: string, selectedDate: Date) => {
   const today = new Date()
   const isToday = selectedDate.toISOString().split('T')[0] === today.toISOString().split('T')[0]
   if (!isToday) return false
-  if (status !== 'confirmed' && status !== 'reserved') return false
+  if (status !== 'reserved') return false
   const [h, m] = time.split(':').map(Number)
   const resMinutes = h * 60 + m
   const nowMinutes = today.getHours() * 60 + today.getMinutes()
@@ -246,10 +246,9 @@ export function TimelineView({ reservations, tables, turno, selectedDate, waitli
 
                             // Check if late (only for pending statuses)
                             const resIsLate = isLate(res.time, res.status, selectedDate)
-                            // Normalize status for lookup
-                            const isNoShow = res.status === 'no_show' || res.status === 'no-show' || res.status === 'noshow'
+                            const isNoShow = res.status === 'no_show'
                             const colorKey = isNoShow ? 'no_show' : resIsLate ? 'late' : res.status
-                            const colors = STATUS_COLORS[colorKey] || STATUS_COLORS.confirmed
+                            const colors = STATUS_COLORS[colorKey] || STATUS_COLORS.reserved
 
                             return (
                               <div

@@ -134,6 +134,9 @@ export interface RestaurantConfig {
   telefono: string
   pie_ticket: string | null
   logo_url: string | null
+  // KDS color thresholds (minutes since item was sent to kitchen)
+  kds_warning_minutes?: number | null
+  kds_danger_minutes?: number | null
   created_at: string
   updated_at: string
 }

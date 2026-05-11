@@ -15,7 +15,7 @@ interface TicketPreviewProps {
   items?: TicketItem[]
   tableLabel?: string
   staffName?: string
-  paymentMethod?: 'efectivo' | 'tarjeta'
+  paymentMethod?: 'efectivo' | 'tarjeta' | 'mixto'
   amountPaid?: number
   change?: number
   ticketNumber?: string

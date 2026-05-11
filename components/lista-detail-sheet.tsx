@@ -159,7 +159,7 @@ export function ListaDetailSheet({
     
     // Check for pending reservation
     const pendingRes = tableReservations.find(r => 
-      r.status === 'reserved' || r.status === 'confirmed'
+      r.status === 'reserved'
     )
     if (pendingRes) {
       return { 
@@ -234,7 +234,6 @@ export function ListaDetailSheet({
                   )}
                   <span className={cn(
                     "px-3 py-1 rounded-full text-sm",
-                    currentReservation.status === 'confirmed' && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
                     currentReservation.status === 'reserved' && "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
                     currentReservation.status === 'seated' && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
                   )}>

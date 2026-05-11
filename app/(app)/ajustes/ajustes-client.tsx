@@ -89,11 +89,14 @@ interface AjustesClientProps {
 }
 
 const ROLE_LABELS: Record<StaffRole, string> = {
-  dueno: 'Dueno',
-  mesero: 'Mesero',
+  admin: 'Admin',
+  caja: 'Caja',
+  camarero: 'Camarero',
+  cocina: 'Cocina',
+  reservas: 'Reservas',
 }
 
-const ZONES: TableZone[] = ['Jovino', 'Arboles', 'Porche Nuevo', 'Cristal', 'Dentro', 'Sombrilla']
+const ZONES: TableZone[] = ['Jovino', 'Árboles', 'Porche Nuevo', 'Cristal', 'Dentro', 'Sombrilla']
 
 const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'plano', label: 'Plano y Mesas', icon: <MapPin className="h-4 w-4" /> },
@@ -700,7 +703,7 @@ export function AjustesClient({
                   <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10">
-                        {member.role === 'dueno' ? <Shield className="h-5 w-5 text-primary" /> : <User className="h-5 w-5 text-primary" />}
+                        {member.role === 'admin' ? <Shield className="h-5 w-5 text-primary" /> : <User className="h-5 w-5 text-primary" />}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
@@ -1046,7 +1049,7 @@ export function AjustesClient({
                           min="1"
                           max="60"
                           value={config?.kds_warning_minutes ?? 10}
-                          onChange={(e) => setConfig({ ...config, kds_warning_minutes: parseInt(e.target.value) || 10 })}
+                          onChange={(e) => setConfig(config ? { ...config, kds_warning_minutes: parseInt(e.target.value) || 10 } : null)}
                           className="w-20"
                         />
                         <span className="text-sm text-muted-foreground">minutos</span>
@@ -1064,7 +1067,7 @@ export function AjustesClient({
                           min="1"
                           max="60"
                           value={config?.kds_danger_minutes ?? 20}
-                          onChange={(e) => setConfig({ ...config, kds_danger_minutes: parseInt(e.target.value) || 20 })}
+                          onChange={(e) => setConfig(config ? { ...config, kds_danger_minutes: parseInt(e.target.value) || 20 } : null)}
                           className="w-20"
                         />
                         <span className="text-sm text-muted-foreground">minutos</span>
@@ -1243,11 +1246,14 @@ export function AjustesClient({
               </Field>
               <Field>
                 <FieldLabel htmlFor="staffRole">Rol</FieldLabel>
-                <Select name="role" defaultValue="mesero">
+                <Select name="role" defaultValue="camarero">
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mesero">Mesero</SelectItem>
-                    <SelectItem value="dueno">Dueno</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="caja">Caja</SelectItem>
+                    <SelectItem value="camarero">Camarero</SelectItem>
+                    <SelectItem value="cocina">Cocina</SelectItem>
+                    <SelectItem value="reservas">Reservas</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>

@@ -53,7 +53,7 @@ const isToday = (date: Date) => {
 
 const isLate = (reservationTime: string, reservationStatus: string, selectedDate: Date) => {
   if (!isToday(selectedDate)) return false
-  if (reservationStatus !== 'confirmed' && reservationStatus !== 'reserved') return false
+  if (reservationStatus !== 'reserved') return false
   const [h, m] = reservationTime.split(':').map(Number)
   const resMinutes = h * 60 + m
   const now = new Date()
@@ -207,7 +207,7 @@ export function ListaClient() {
   // Summary stats
   const seatedCount = filteredReservations.filter(r => r.status === 'seated').length
   const pendingCount = filteredReservations.filter(r => 
-    (r.status === 'confirmed' || r.status === 'reserved') && !isLate(r.time, r.status, date)
+    r.status === 'reserved' && !isLate(r.time, r.status, date)
   ).length
   const lateCount = filteredReservations.filter(r => 
     isLate(r.time, r.status, date)

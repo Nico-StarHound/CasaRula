@@ -8,7 +8,7 @@ import type { Staff, StaffRole } from '@/lib/types'
 
 export async function getStaff(): Promise<Staff[]> {
   const session = await getSession()
-  if (!session || session.staff.role !== 'dueno') return []
+  if (!session || session.staff.role !== 'admin') return []
 
   const supabase = await createClient()
   const { data } = await supabase
@@ -22,7 +22,7 @@ export async function getStaff(): Promise<Staff[]> {
 
 export async function createStaff(formData: FormData): Promise<{ error?: string; staff?: Staff }> {
   const session = await getSession()
-  if (!session || session.staff.role !== 'dueno') return { error: 'No autorizado' }
+  if (!session || session.staff.role !== 'admin') return { error: 'No autorizado' }
 
   const name = formData.get('name') as string
   const pin = formData.get('pin') as string
@@ -61,7 +61,7 @@ export async function updateStaffPin(
   newPin: string
 ): Promise<{ error?: string }> {
   const session = await getSession()
-  if (!session || session.staff.role !== 'dueno') return { error: 'No autorizado' }
+  if (!session || session.staff.role !== 'admin') return { error: 'No autorizado' }
 
   if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
     return { error: 'El PIN debe ser de 4 dígitos' }
@@ -84,7 +84,7 @@ export async function updateStaffPin(
 
 export async function deleteStaff(staffId: string): Promise<{ error?: string }> {
   const session = await getSession()
-  if (!session || session.staff.role !== 'dueno') return { error: 'No autorizado' }
+  if (!session || session.staff.role !== 'admin') return { error: 'No autorizado' }
 
   // Prevent deleting yourself
   if (staffId === session.staff.id) {

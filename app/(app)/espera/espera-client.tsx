@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
-import { Empty } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Plus, Users, Clock, Phone, Bell, UserCheck, X } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -119,10 +119,14 @@ export function EsperaClient({ initialWaitlist }: EsperaClientProps) {
       {/* Waitlist */}
       <div className="flex-1 overflow-y-auto p-4">
         {waitlist.length === 0 ? (
-          <Empty
-            title="No hay nadie esperando"
-            description="Agrega clientes a la lista de espera cuando no haya mesas disponibles"
-          />
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>No hay nadie esperando</EmptyTitle>
+              <EmptyDescription>
+                Agrega clientes a la lista de espera cuando no haya mesas disponibles
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="space-y-3">
             {waitlist.map((entry, index) => (
