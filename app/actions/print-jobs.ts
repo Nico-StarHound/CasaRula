@@ -33,12 +33,26 @@ export async function enqueuePrintJob(args: EnqueueArgs): Promise<{ success: boo
   try {
     const supabase = await createClient()
 
+    // Resolve the active printer for this type (single source of truth = the
+    // printers table). If none is configured, we still enqueue — the daemon
+    // will record a 'no printer configured' error. This way the absence of
+    // a configured printer is visible/diagnosable rather than silent.
+    const { data: printer } = await supabase
+      .from('printers')
+      .select('id')
+      .eq('restaurant_id', args.restaurantId)
+      .eq('type', args.printerType)
+      .eq('enabled', true)
+      .limit(1)
+      .maybeSingle()
+
     const { data, error } = await supabase
       .from('print_jobs')
       .insert({
         restaurant_id: args.restaurantId,
         kind: args.kind,
         printer_type: args.printerType,
+        printer_id: printer?.id ?? null,
         payload: args.payload,
         order_id: args.orderId || null,
         ticket_id: args.ticketId || null,

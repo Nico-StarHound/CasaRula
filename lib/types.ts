@@ -140,3 +140,17 @@ export interface RestaurantConfig {
   created_at: string
   updated_at: string
 }
+
+export type PrinterType = 'cocina' | 'barra' | 'caja'
+
+export interface Printer {
+  id: string
+  restaurant_id: string
+  name: string
+  type: PrinterType
+  ip: string
+  port: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}

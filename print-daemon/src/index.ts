@@ -42,24 +42,47 @@ const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROL
 
 // ---------------------------------------------------------------------
 // Resolve which printer to send a job to
+//
+// Strategy (the new printers table is the single source of truth):
+//   1. If the job has printer_id, look that exact row up.
+//   2. Otherwise look up the active printer by type for our restaurant.
+//   3. Last resort: PRINTER_<TYPE>_IP env override (kept only for the
+//      bootstrap case where the printers table is empty).
 // ---------------------------------------------------------------------
-async function resolvePrinter(printerType: string): Promise<PrinterTarget | null> {
-  // 1. .env override wins (handy for local testing)
+async function resolvePrinter(
+  printerType: string,
+  printerId: string | null
+): Promise<PrinterTarget | null> {
+  if (printerId) {
+    const { data } = await supabase
+      .from('printers')
+      .select('ip, port, enabled')
+      .eq('id', printerId)
+      .maybeSingle()
+    if (data?.enabled && data.ip) {
+      return { ip: data.ip, port: data.port || 9100 }
+    }
+    // printer_id was stamped on the job but the printer is now gone/disabled.
+    // Fall through to type lookup.
+  }
+
+  const { data } = await supabase
+    .from('printers')
+    .select('ip, port')
+    .eq('restaurant_id', RESTAURANT_ID)
+    .eq('type', printerType)
+    .eq('enabled', true)
+    .limit(1)
+    .maybeSingle()
+  if (data?.ip) {
+    return { ip: data.ip, port: data.port || 9100 }
+  }
+
+  // Last-resort env override (only useful when the printers table is empty)
   const envIp = ENV_PRINTERS[printerType]
   if (envIp) return { ip: envIp, port: PRINTER_PORT }
 
-  // 2. Otherwise pick the first online printer of this type from DB
-  const { data, error } = await supabase
-    .from('printers')
-    .select('ip_address, port')
-    .eq('restaurant_id', RESTAURANT_ID)
-    .eq('type', printerType)
-    .eq('is_online', true)
-    .limit(1)
-    .single()
-
-  if (error || !data) return null
-  return { ip: data.ip_address, port: data.port || 9100 }
+  return null
 }
 
 // ---------------------------------------------------------------------
@@ -69,6 +92,7 @@ async function processJob(job: {
   id: string
   kind: string
   printer_type: string
+  printer_id: string | null
   payload: any
   attempts: number
   max_attempts: number
@@ -116,9 +140,9 @@ async function processJob(job: {
     if (DRY_RUN) {
       console.log(`[daemon] DRY_RUN — would send ${chunks.length} chunks (${totalBytes} bytes)`)
     } else {
-      const target = await resolvePrinter(job.printer_type)
+      const target = await resolvePrinter(job.printer_type, job.printer_id)
       if (!target) {
-        throw new Error(`No online printer of type "${job.printer_type}" found`)
+        throw new Error(`No printer configured for type "${job.printer_type}"`)
       }
       console.log(`[daemon] sending ${chunks.length} chunks (${totalBytes} bytes) to ${target.ip}:${target.port}`)
       await sendChunksToPrinter(target, chunks, CHUNK_DELAY_MS)

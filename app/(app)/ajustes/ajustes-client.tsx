@@ -45,7 +45,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { 
   Plus, Trash2, LogOut, User, Shield, Pencil, MapPin, Users, Move, Receipt, 
-  Upload, Check, UtensilsCrossed, Settings, X
+  Upload, Check, UtensilsCrossed, Settings, X, Printer
 } from 'lucide-react'
 import Link from 'next/link'
 import { Textarea } from '@/components/ui/textarea'
@@ -75,8 +75,9 @@ import {
   type MenuItem,
   type ModifierGroup,
 } from '@/app/actions/menu'
+import { PrintersSection } from '@/components/printers-section'
 
-type Section = 'plano' | 'personal' | 'ticket' | 'carta' | 'general'
+type Section = 'plano' | 'personal' | 'ticket' | 'carta' | 'impresoras' | 'general'
 type CartaTab = 'categorias' | 'platos' | 'modificadores' | 'preview'
 
 interface AjustesClientProps {
@@ -103,6 +104,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'personal', label: 'Personal', icon: <Users className="h-4 w-4" /> },
   { id: 'ticket', label: 'Ticket', icon: <Receipt className="h-4 w-4" /> },
   { id: 'carta', label: 'Carta', icon: <UtensilsCrossed className="h-4 w-4" /> },
+  { id: 'impresoras', label: 'Impresoras', icon: <Printer className="h-4 w-4" /> },
   { id: 'general', label: 'General', icon: <Settings className="h-4 w-4" /> },
 ]
 
@@ -1012,6 +1014,13 @@ export function AjustesClient({
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {/* IMPRESORAS */}
+          {activeSection === 'impresoras' && (
+            <div className="max-w-2xl">
+              <PrintersSection />
             </div>
           )}
 
