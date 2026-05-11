@@ -358,7 +358,9 @@ export function TableActionSheet({
   }
 
   const handleNextBackToMap = () => {
-    // Reset and close drawer; caller's onRefresh already updated the map.
+    // Refresh again just before closing so the map shows the new 'seated'
+    // status even if the initial onRefresh() race-lost against React render.
+    onRefresh()
     setSheetView('actions')
     onOpenChange(false)
   }
