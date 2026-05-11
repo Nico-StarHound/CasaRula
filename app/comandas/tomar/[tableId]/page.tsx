@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SessionWatcher } from '@/components/session-watcher'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Sheet,
@@ -93,27 +94,15 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
       setMenu(menuData)
       if (menuData.length > 0) setActiveCategory(menuData[0].id)
       const table = tables.find(t => t.id === tableId)
-      setTableName(table?.label || 'Mesa')
+      setTableName(table?.label || '')
       setLoading(false)
-      
-      // Debug: log modifier data
-      const allItems = menuData.flatMap(c => c.items)
-      const itemsWithModifiers = allItems.filter(i => i.modifier_groups && i.modifier_groups.length > 0)
-      console.log('[v0] Total items:', allItems.length)
-      console.log('[v0] Items with modifiers:', itemsWithModifiers.length)
-      if (itemsWithModifiers.length > 0) {
-        const sample = itemsWithModifiers[0]
-        console.log('[v0] Sample item:', sample.name)
-        console.log('[v0] Sample modifier_groups:', JSON.stringify(sample.modifier_groups, null, 2))
-      }
     }
     load()
   }, [tableId])
 
   const handleTapMenuItem = (item: MenuItem, categoryPrinterTarget?: string) => {
     const hasModifiers = Array.isArray(item.modifier_groups) && item.modifier_groups.length > 0
-    console.log('[v0] handleTapMenuItem:', item.name, 'hasModifiers:', hasModifiers, 'modifier_groups:', item.modifier_groups)
-    
+
     if (hasModifiers) {
       setSelectedItem({ ...item, printer_target: categoryPrinterTarget } as MenuItem & { printer_target?: string })
       setSelectedModifiers({})
@@ -560,6 +549,22 @@ const handleSendToKitchen = async () => {
     )
   }
 
+  // If we couldn't resolve a table label, the tableId in the URL is invalid.
+  // Show a friendly error rather than letting the user think this is a real mesa.
+  if (!tableName) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-semibold">Mesa no encontrada</h1>
+        <p className="text-muted-foreground max-w-sm">
+          La mesa indicada en la URL no existe. Vuelve al mapa y selecciónala desde ahí.
+        </p>
+        <Link href="/mapa">
+          <Button variant="outline">Volver al mapa</Button>
+        </Link>
+      </div>
+    )
+  }
+
   const activeItems = menu.find(c => c.id === activeCategory)?.items || []
 
   // Order summary component (reused in both mobile sheet and desktop panel)
@@ -860,6 +865,7 @@ const handleSendToKitchen = async () => {
         }
       `}</style>
       <div className="min-h-screen bg-background flex flex-col">
+      <SessionWatcher />
       {/* Header */}
       <header className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 h-14">

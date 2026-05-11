@@ -65,8 +65,20 @@ export function PinLogin({ restaurantName }: PinLoginProps) {
       }
       
       if (response.ok && result.success) {
-        // Use window.location for full page navigation to ensure cookie is sent
-        const destination = result.role === 'cocina' ? '/cocina' : '/mapa'
+        // Use window.location for full page navigation to ensure cookie is sent.
+        // If the user got bounced here from somewhere specific (e.g. session
+        // expired mid-comanda), honour ?next= so they resume where they were.
+        // Cocina is the exception — they can only operate the kitchen screen.
+        const params = new URLSearchParams(window.location.search)
+        const next = params.get('next')
+        let destination: string
+        if (result.role === 'cocina') {
+          destination = '/cocina'
+        } else if (next && next.startsWith('/')) {
+          destination = next
+        } else {
+          destination = '/mapa'
+        }
         window.location.href = destination
         return
       } else {

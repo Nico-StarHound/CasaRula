@@ -326,21 +326,35 @@ export async function seatTableWalkIn(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  // Create a seated reservation so table shows as occupied
-  await supabase.from('reservations').insert({
-    restaurant_id: restaurantId,
-    table_id: tableId,
-    guest_name: guestName || 'Sin nombre',
-    guest_phone: guestPhone || null,
-    party_size: comensales,
-    date: new Date().toISOString().split('T')[0],
-    time: new Date().toTimeString().slice(0, 5),
-    duration_minutes: 90,
-    status: 'seated',
-    mesa_solicitada: false,
-  })
+  // CONCURRENCY: if the table is ALREADY seated (another waiter beat us
+  // to it), don't create a duplicate reservation. Just reuse the existing
+  // open order via openOrder() below.
+  const { data: existingSeated } = await supabase
+    .from('reservations')
+    .select('id')
+    .eq('table_id', tableId)
+    .eq('status', 'seated')
+    .eq('date', new Date().toISOString().split('T')[0])
+    .limit(1)
+    .maybeSingle()
 
-  // Create the order
+  if (!existingSeated) {
+    // Create a seated reservation so table shows as occupied
+    await supabase.from('reservations').insert({
+      restaurant_id: restaurantId,
+      table_id: tableId,
+      guest_name: guestName || 'Sin nombre',
+      guest_phone: guestPhone || null,
+      party_size: comensales,
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toTimeString().slice(0, 5),
+      duration_minutes: 90,
+      status: 'seated',
+      mesa_solicitada: false,
+    })
+  }
+
+  // Create the order (openOrder() will reuse an existing open one if any)
   const order = await openOrder(tableId, comensales)
   return order
 }
@@ -351,15 +365,35 @@ export async function openOrder(tableId: string, comensales: number): Promise<Or
 
   const supabase = await createClient()
 
-  // Close any existing open orders for this table (prevents stale order bug)
-  await supabase
+  // CONCURRENCY: if there's already an open order for this table, reuse it
+  // (do NOT cancel and recreate — that was destroying in-progress work when
+  // two staff members touched the same table in parallel). Only the
+  // comensales count may need updating.
+  const { data: existing } = await supabase
     .from('orders')
-    .update({ 
-      status: 'cancelled',
-      closed_at: new Date().toISOString()
-    })
+    .select('id, comensales, total, items:order_items(*)')
     .eq('table_id', tableId)
     .eq('status', 'open')
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    // Update comensales if it changed (e.g. party grew/shrank at the door)
+    if (existing.comensales !== comensales) {
+      await supabase
+        .from('orders')
+        .update({ comensales })
+        .eq('id', existing.id)
+    }
+    return {
+      id: existing.id,
+      table_id: tableId,
+      status: 'open',
+      comensales,
+      total: Number(existing.total) || 0,
+      items: (existing.items || []) as unknown as OrderItem[],
+    }
+  }
 
   // Create fresh order
   const { data: newOrder, error } = await supabase
@@ -391,6 +425,16 @@ export async function getOrCreateOrder(tableId: string): Promise<Order | null> {
   if (!restaurantId) return null
 
   const supabase = await createClient()
+
+  // Validate that the table actually exists and belongs to this restaurant.
+  // Without this, hitting /comandas/tomar/<random-uuid> would silently create
+  // a junk order row pointing nowhere.
+  const { data: table } = await supabase
+    .from('tables')
+    .select('id')
+    .eq('id', tableId)
+    .maybeSingle()
+  if (!table) return null
 
   // Check for existing open order
   const { data: existingOrder } = await supabase

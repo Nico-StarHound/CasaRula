@@ -14,6 +14,7 @@ const ACCESS_RULES: Array<{ prefix: string; allowed: 'any' | string[] }> = [
   { prefix: '/cocina',          allowed: ['cocina', 'admin'] },
 
   // Admin-only
+  { prefix: '/admin',           allowed: ['admin'] },
   { prefix: '/ajustes',         allowed: ['admin'] },
   { prefix: '/dashboard',       allowed: ['admin'] },
 
@@ -77,6 +78,7 @@ export async function middleware(request: NextRequest) {
 // Limit middleware to relevant paths. We don't want it running on every static asset.
 export const config = {
   matcher: [
+    '/admin/:path*',
     '/cocina/:path*',
     '/ajustes/:path*',
     '/dashboard/:path*',

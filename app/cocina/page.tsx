@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Check, ChevronUp, ChevronDown, Zap } from 'lucide-react'
+import { Check, ChevronUp, ChevronDown, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { UserMenu } from '@/components/user-menu'
+import { SessionWatcher } from '@/components/session-watcher'
 import { 
   getKdsItems, 
   markItemReady, 
@@ -190,17 +191,16 @@ export default function CocinaPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+      <SessionWatcher />
       {/* Header */}
       <header className="border-b border-gray-800 px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <Link href="/admin">
-          <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white hover:bg-gray-800">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
         <h1 className="text-lg font-semibold">Cocina</h1>
-        <span className="text-sm text-gray-500 ml-auto">
+        <span className="text-sm text-gray-500">
           {items.length} {items.length === 1 ? 'plato' : 'platos'} en cocina
         </span>
+        <div className="ml-auto">
+          <UserMenu />
+        </div>
       </header>
 
       {/* Main content */}

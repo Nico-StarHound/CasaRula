@@ -224,16 +224,9 @@ export function TicketsClient({ initialTickets, initialStats, config }: TicketsC
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background border-b px-4 py-3">
-        <div className="flex items-center gap-3 mb-3">
-          <Link href="/admin">
-            <Button variant="ghost" size="icon" className="shrink-0">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">Tickets</h1>
-            <p className="text-sm text-muted-foreground">Historico de cobros</p>
-          </div>
+        <div className="mb-3">
+          <h1 className="text-xl font-bold">Tickets</h1>
+          <p className="text-sm text-muted-foreground">Historico de cobros</p>
         </div>
 
         {/* Search and Filters */}

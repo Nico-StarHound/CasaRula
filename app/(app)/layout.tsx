@@ -2,6 +2,8 @@ import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 import { redirect } from 'next/navigation'
 import { BottomNav } from '@/components/bottom-nav'
+import { SessionWatcher } from '@/components/session-watcher'
+import { OfflineBanner } from '@/components/offline-banner'
 import { createClient } from '@/lib/supabase/server'
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -141,6 +143,8 @@ export default async function AppLayout({
 
   return (
     <div className="h-dvh flex flex-col">
+      <SessionWatcher />
+      <OfflineBanner />
       <main className="flex-1 overflow-hidden min-h-0">
         {children}
       </main>

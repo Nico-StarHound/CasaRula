@@ -132,9 +132,13 @@ export function MapaClient({
       // Handled inside TableActionSheet with comensales picker
       return
     } else if (action === 'complete' && selectedTable.current_reservation) {
-      router.push(`/reservas/${selectedTable.current_reservation.id}/completar`)
+      // The actual "complete" is handled inline by the drawer (handleComplete);
+      // this branch is a fallback that opens the reservation detail page.
+      router.push(`/reservas/${selectedTable.current_reservation.id}`)
     } else if (action === 'seat-reservation' && reservationOrId && typeof reservationOrId !== 'string') {
-      router.push(`/reservas/${reservationOrId.id}/sentar`)
+      // "Sentar" is also handled inline by the drawer (handleMarkSeated);
+      // fallback opens the reservation detail page.
+      router.push(`/reservas/${reservationOrId.id}`)
     } else if (action === 'cambiarMesa' && typeof reservationOrId === 'string') {
       const reservation = selectedTable.all_shift_reservations?.find(r => r.id === reservationOrId)
       if (reservation) {

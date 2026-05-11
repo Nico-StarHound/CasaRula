@@ -23,6 +23,7 @@ import { getSession } from '@/app/actions/auth'
 import { TicketPreview } from '@/components/ticket-preview'
 import type { RestaurantConfig } from '@/lib/types'
 import { Spinner } from '@/components/ui/spinner'
+import { SessionWatcher } from '@/components/session-watcher'
 
 interface OrderItemWithInvitation {
   id: string
@@ -228,6 +229,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      <SessionWatcher />
       {/* Header */}
       <header className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 h-14">

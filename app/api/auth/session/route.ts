@@ -92,3 +92,20 @@ export async function DELETE() {
   )
   return response
 }
+
+// Cheap "is my session still alive?" endpoint used by the client to detect
+// expiry and proactively send the user back to /login before they try to
+// take a comanda with an expired cookie.
+export async function GET(request: NextRequest) {
+  const token = request.cookies.get('session')?.value
+  if (!token) {
+    return NextResponse.json({ valid: false }, { status: 401 })
+  }
+  try {
+    const { jwtVerify } = await import('jose')
+    await jwtVerify(token, JWT_SECRET)
+    return NextResponse.json({ valid: true })
+  } catch {
+    return NextResponse.json({ valid: false }, { status: 401 })
+  }
+}
