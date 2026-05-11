@@ -6,6 +6,7 @@ import { RestaurantMap } from '@/components/restaurant-map'
 import { TableActionSheet } from '@/components/table-action-sheet'
 import { CambiarMesaSheet } from '@/components/cambiar-mesa-sheet'
 import { DateShiftHeader, getCurrentShift } from '@/components/date-shift-header'
+import { UserMenu } from '@/components/user-menu'
 import { Button } from '@/components/ui/button'
 import { updateTableZonePosition, getTablesWithStatus } from '@/app/actions/floor-plan'
 import { changeReservationTable } from '@/app/actions/reservations'
@@ -185,24 +186,27 @@ export function MapaClient({
         <header className="flex-shrink-0 border-b">
           <div className="flex items-center justify-between px-4 py-2">
             <h1 className="text-lg font-semibold">{restaurantName}</h1>
-            {/* Legend - compact */}
-            <div className="hidden sm:flex items-center gap-3 text-xs">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-muted-foreground">Libre</span>
+            <div className="flex items-center gap-3">
+              {/* Legend - compact */}
+              <div className="hidden sm:flex items-center gap-3 text-xs">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-muted-foreground">Libre</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span className="text-muted-foreground">Reservada</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="text-muted-foreground">Ocupada</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-stone-400" />
+                  <span className="text-muted-foreground">Bloqueada</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-amber-400" />
-                <span className="text-muted-foreground">Reservada</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-muted-foreground">Ocupada</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-stone-400" />
-                <span className="text-muted-foreground">Bloqueada</span>
-              </div>
+              <UserMenu />
             </div>
           </div>
           <div className="px-4 pb-2">

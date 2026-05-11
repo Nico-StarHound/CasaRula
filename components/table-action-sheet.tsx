@@ -236,7 +236,7 @@ export function TableActionSheet({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [actioningReservationId, setActioningReservationId] = useState<string | null>(null)
-  const [sheetView, setSheetView] = useState<'actions' | 'comensales'>('actions')
+  const [sheetView, setSheetView] = useState<'actions' | 'comensales' | 'next'>('actions')
   const [comensales, setComensales] = useState(2)
   const [openingMesa, setOpeningMesa] = useState(false)
   const [guestName, setGuestName] = useState('')
@@ -259,6 +259,14 @@ export function TableActionSheet({
       setTableOpenOrder(null)
     }
   }, [open, table])
+
+  // Reset to actions view whenever the drawer closes — otherwise reopening
+  // it after a "Sentar" leaves us stuck on the "next" view.
+  useEffect(() => {
+    if (!open) {
+      setSheetView('actions')
+    }
+  }, [open])
 
   if (!table) return null
 
@@ -338,8 +346,20 @@ export function TableActionSheet({
     setOpeningMesa(false)
     if (order) {
       onRefresh()
-      window.location.href = `/comandas/tomar/${table.id}`
+      // Show next-step picker: take comanda now, or back to map?
+      setSheetView('next')
     }
+  }
+
+  const handleNextTakeComanda = () => {
+    if (!table) return
+    window.location.href = `/comandas/tomar/${table.id}`
+  }
+
+  const handleNextBackToMap = () => {
+    // Reset and close drawer; caller's onRefresh already updated the map.
+    setSheetView('actions')
+    onOpenChange(false)
   }
 
   const handleSeatReservationAndOpenComanda = async (reservationId: string, partySize: number) => {
@@ -687,7 +707,7 @@ const handleVerComanda = () => {
               </div>
             </div>
           </>
-        ) : (
+        ) : sheetView === 'comensales' ? (
           <>
             <DrawerHeader className="text-left pb-2">
               <div className="flex items-center gap-3">
@@ -761,6 +781,37 @@ const handleVerComanda = () => {
                 {openingMesa ? 'Abriendo...' : 'Sentar mesa'}
               </Button>
             </div>
+          </>
+        ) : sheetView === 'next' ? (
+          <>
+            <DrawerHeader className="text-left pb-2">
+              <DrawerTitle>Mesa {table.label} sentada</DrawerTitle>
+              <DrawerDescription>
+                {comensales} {comensales === 1 ? 'comensal' : 'comensales'}. ¿Tomar comanda ahora?
+              </DrawerDescription>
+            </DrawerHeader>
+
+            <div className="px-4 pb-6 flex flex-col gap-3">
+              <Button
+                size="lg"
+                className="w-full h-14 text-lg"
+                onClick={handleNextTakeComanda}
+              >
+                Tomar comanda
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full h-14 text-lg"
+                onClick={handleNextBackToMap}
+              >
+                Volver al mapa
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* fallback — shouldn't normally hit */}
           </>
         )}
       </DrawerContent>
