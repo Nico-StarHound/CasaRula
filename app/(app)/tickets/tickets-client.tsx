@@ -467,6 +467,7 @@ export function TicketsClient({ initialTickets, initialStats, config }: TicketsC
             {refundMode === 'amount' && (
               <Input
                 type="number"
+                  inputMode="decimal"
                 placeholder="Importe a devolver"
                 value={refundAmount}
                 onChange={(e) => setRefundAmount(e.target.value)}

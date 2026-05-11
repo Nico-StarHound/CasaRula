@@ -1042,6 +1042,7 @@ export function AjustesClient({
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
+                          inputMode="numeric"
                           min="1"
                           max="60"
                           value={config?.kds_warning_minutes ?? 10}
@@ -1059,6 +1060,7 @@ export function AjustesClient({
                       <div className="flex items-center gap-2">
                         <Input
                           type="number"
+                          inputMode="numeric"
                           min="1"
                           max="60"
                           value={config?.kds_danger_minutes ?? 20}
@@ -1144,7 +1146,7 @@ export function AjustesClient({
               </Field>
               <Field>
                 <FieldLabel htmlFor="tableCapacity">Capacidad</FieldLabel>
-                <Input id="tableCapacity" name="capacity" type="number" min="1" max="20" defaultValue="4" required />
+                <Input id="tableCapacity" name="capacity" type="number" inputMode="numeric" min="1" max="20" defaultValue="4" required />
               </Field>
               <Field>
                 <FieldLabel htmlFor="tableZone">Zona</FieldLabel>
@@ -1191,7 +1193,7 @@ export function AjustesClient({
               </Field>
               <Field>
                 <FieldLabel htmlFor="editTableCapacity">Capacidad</FieldLabel>
-                <Input id="editTableCapacity" name="capacity" type="number" min="1" max="20" defaultValue={selectedTable?.capacity} required />
+                <Input id="editTableCapacity" name="capacity" type="number" inputMode="numeric" min="1" max="20" defaultValue={selectedTable?.capacity} required />
               </Field>
               <Field>
                 <FieldLabel htmlFor="editTableZone">Zona</FieldLabel>
@@ -1324,7 +1326,7 @@ export function AjustesClient({
             </Field>
             <Field>
               <FieldLabel>Orden</FieldLabel>
-              <Input name="sort_order" type="number" defaultValue={editingCategory?.sort_order || categories.length + 1} />
+              <Input name="sort_order" type="number" inputMode="numeric" defaultValue={editingCategory?.sort_order || categories.length + 1} />
             </Field>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? <Spinner className="mr-2" /> : null}Guardar
@@ -1355,7 +1357,7 @@ export function AjustesClient({
             </Field>
             <Field>
               <FieldLabel>Precio (dejar vacio = Consultar)</FieldLabel>
-              <Input name="price" type="number" step="0.01" defaultValue={editingItem?.price ?? ''} />
+              <Input name="price" type="number" inputMode="decimal" step="0.01" defaultValue={editingItem?.price ?? ''} />
             </Field>
             <Field>
               <FieldLabel>Descripcion (opcional)</FieldLabel>
@@ -1491,6 +1493,7 @@ function ModifierForm({
             <Input 
               name="option_price"
               type="number"
+              inputMode="decimal"
               step="0.01"
               value={opt.price_delta}
               onChange={(e) => updateOption(idx, 'price_delta', parseFloat(e.target.value) || 0)}

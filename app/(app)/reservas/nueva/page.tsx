@@ -299,6 +299,7 @@ export default function NuevaReservaPage() {
                 <Input
                   id="partySize"
                   type="number"
+                  inputMode="numeric"
                   min="1"
                   max="99"
                   value={partySize}

@@ -376,6 +376,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
                       </div>
                       <Input
                         type="number"
+                        inputMode="decimal"
                         placeholder={discountType === 'porcentaje' ? 'Ej: 10' : 'Ej: 5.00'}
                         value={discountValue}
                         onChange={(e) => setDiscountValue(e.target.value)}
@@ -514,6 +515,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
                 <label className="text-sm text-muted-foreground">Efectivo entregado</label>
                 <Input
                   type="number"
+                  inputMode="decimal"
                   placeholder="0.00"
                   value={efectivoEntregado}
                   onChange={(e) => setEfectivoEntregado(e.target.value)}
@@ -537,6 +539,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
                 <label className="text-sm text-muted-foreground">Efectivo</label>
                 <Input
                   type="number"
+                  inputMode="decimal"
                   placeholder="0.00"
                   value={efectivoMixto}
                   onChange={(e) => setEfectivoMixto(e.target.value)}
@@ -547,6 +550,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
                 <label className="text-sm text-muted-foreground">Tarjeta</label>
                 <Input
                   type="number"
+                  inputMode="decimal"
                   placeholder="0.00"
                   value={tarjetaMixto}
                   onChange={(e) => setTarjetaMixto(e.target.value)}
