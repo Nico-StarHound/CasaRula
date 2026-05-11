@@ -269,8 +269,15 @@ export async function getTablesWithStatus(floorPlanId: string, date: string, shi
     tableToReservations[rt.table_id].push(rt.reservation_id)
   }
 
-  // Filter reservations by shift
-  const reservations = allReservations?.filter(r => checkTimeInShift(r.time, shift)) || []
+  // Filter reservations by shift — but ALWAYS keep 'seated' ones regardless.
+  // A seated reservation means people are physically at the table right now,
+  // even if their time doesn't fall inside the currently viewed shift (e.g.
+  // a walk-in seated at 16:30 while viewing "cena", or a lunch that's
+  // running long). Hiding them would paint the table green even though
+  // it's occupied.
+  const reservations = allReservations?.filter(r => 
+    r.status === 'seated' || checkTimeInShift(r.time, shift)
+  ) || []
 
   // Compute status for each table
   const now = new Date()
