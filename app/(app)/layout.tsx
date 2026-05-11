@@ -122,12 +122,29 @@ export default async function AppLayout({
   
   await ensureRestaurantExists()
 
+  // Read the role from the session cookie so the bottom nav shows the
+  // correct tabs per role. The middleware already enforces RBAC on
+  // navigation, but the nav needs the role to hide / show items
+  // (e.g. Ajustes is owner-only, Tickets is admin/caja).
+  const layoutCookieStore = await cookies()
+  const layoutToken = layoutCookieStore.get('session')?.value
+  let role = ''
+  if (layoutToken) {
+    try {
+      const { payload } = await jwtVerify(layoutToken, JWT_SECRET)
+      role = (payload as { role?: string }).role || ''
+    } catch {
+      // ignore — middleware will have redirected already
+    }
+  }
+  const isOwner = role === 'admin'
+
   return (
     <div className="h-dvh flex flex-col">
       <main className="flex-1 overflow-hidden min-h-0">
         {children}
       </main>
-      <BottomNav isOwner={true} userRole="admin" />
+      <BottomNav isOwner={isOwner} userRole={role} />
     </div>
   )
 }
