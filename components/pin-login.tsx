@@ -66,7 +66,8 @@ export function PinLogin({ restaurantName }: PinLoginProps) {
       
       if (response.ok && result.success) {
         // Use window.location for full page navigation to ensure cookie is sent
-        window.location.href = '/admin'
+        const destination = result.role === 'cocina' ? '/cocina' : '/mapa'
+        window.location.href = destination
         return
       } else {
         setError(result.error || `Error ${response.status}`)

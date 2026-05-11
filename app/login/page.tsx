@@ -76,8 +76,9 @@ export default async function LoginPage() {
 
   if (token) {
     try {
-      await jwtVerify(token, JWT_SECRET)
-      redirect('/admin')
+      const { payload } = await jwtVerify(token, JWT_SECRET)
+      const role = (payload as { role?: string }).role || ''
+      redirect(role === 'cocina' ? '/cocina' : '/mapa')
     } catch {
       // Token invalid, show login page
     }

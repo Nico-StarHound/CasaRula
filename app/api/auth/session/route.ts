@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
           .sign(JWT_SECRET)
 
         // Use raw Set-Cookie header — no framework magic
-        const response = NextResponse.json({ success: true })
+        const response = NextResponse.json({ success: true, role: staff.role })
         response.headers.set(
           'Set-Cookie',
           `session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${request.headers.get('x-forwarded-proto') === 'https' ? '; Secure' : ''}`
