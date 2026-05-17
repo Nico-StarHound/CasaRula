@@ -19,7 +19,7 @@ const ACCESS_RULES: Array<{ prefix: string; allowed: 'any' | string[] }> = [
   { prefix: '/dashboard',       allowed: ['admin'] },
 
   // Caja + admin (no analytics, but everything else)
-  { prefix: '/tickets',         allowed: ['admin', 'caja'] },
+  { prefix: '/tickets',         allowed: ['admin', 'caja', 'camarero'] },
 
   // Staff (admin, caja, camarero — NOT cocina)
   { prefix: '/comandas',        allowed: ['admin', 'caja', 'camarero'] },
