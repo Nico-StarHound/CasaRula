@@ -461,8 +461,39 @@ const handleSendToKitchen = async () => {
   void moveItemBetweenRondas; void addRonda; void removeRonda
   void setAllInOneRonda; void setOnePerRonda; void moveItemInOrder
 
-  const pendingItems = order?.items.filter(i => i.status === 'pending') || []
-  const sentItems = order?.items.filter(i => i.status !== 'pending') || []
+  // Reorder helper: when the order has explicit rondas configured (via
+  // the "tandas" sheet), respect that order in the main comanda view.
+  // Otherwise fall back to insertion order (created_at, which is how
+  // the server already returns them).
+  //
+  // Without this, after the waiter reordered tandas and pressed Guardar,
+  // the main list still showed items in their original add order — which
+  // is confusing because the "new order" only became visible inside the
+  // tandas sheet again. The kitchen ticket already respects rondas, but
+  // visual feedback on the screen was missing.
+  function sortByRondas<T extends { id: string }>(arr: T[]): T[] {
+    const rondas = order?.rondas
+    if (!rondas || rondas.length === 0) return arr
+    // Build a map: itemId -> sequential position across all rondas.
+    const posMap = new Map<string, number>()
+    let pos = 0
+    for (const ronda of rondas) {
+      for (const itemId of ronda) {
+        posMap.set(itemId, pos++)
+      }
+    }
+    // Items present in rondas first (in ronda order), then any items
+    // not yet placed in a ronda (newly added since last Guardar) appended
+    // at the end in their original order.
+    return [...arr].sort((a, b) => {
+      const pa = posMap.has(a.id) ? posMap.get(a.id)! : Number.MAX_SAFE_INTEGER
+      const pb = posMap.has(b.id) ? posMap.get(b.id)! : Number.MAX_SAFE_INTEGER
+      return pa - pb
+    })
+  }
+
+  const pendingItems = sortByRondas(order?.items.filter(i => i.status === 'pending') || [])
+  const sentItems = sortByRondas(order?.items.filter(i => i.status !== 'pending') || [])
   const pendingTotal = pendingItems.reduce((sum, i) => sum + (i.price ?? 0) * i.quantity, 0)
   const totalItems = order?.items.reduce((sum, i) => sum + i.quantity, 0) || 0
 
