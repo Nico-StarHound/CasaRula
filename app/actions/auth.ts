@@ -1,12 +1,12 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { hashPin, verifyPin, createSession, clearSession, getSessionData } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import type { Restaurant, Staff, Session } from '@/lib/types'
 
 export async function checkSetupRequired(): Promise<boolean> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data: restaurants } = await supabase
     .from('restaurants')
     .select('id')
@@ -33,7 +33,7 @@ export async function setupRestaurant(formData: FormData): Promise<{ error?: str
     return { error: 'Los PINs no coinciden' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Check if already setup
   const { data: existingRestaurants } = await supabase
@@ -101,7 +101,7 @@ export async function login(formData: FormData): Promise<{ error?: string; succe
     return { error: 'PIN inválido' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get restaurant
   const { data: restaurant } = await supabase
@@ -145,7 +145,7 @@ export async function getSession(): Promise<Session | null> {
   const sessionData = await getSessionData()
   if (!sessionData) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   const { data: staff } = await supabase
     .from('staff')

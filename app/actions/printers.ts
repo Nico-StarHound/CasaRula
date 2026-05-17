@@ -1,11 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { Printer, PrinterType } from '@/lib/types'
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -17,7 +17,7 @@ async function getRestaurantId(): Promise<string | null> {
 export async function listPrinters(): Promise<Printer[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('printers')
     .select('*')
@@ -35,7 +35,7 @@ export async function listPrinters(): Promise<Printer[]> {
 export async function getActivePrinterByType(type: PrinterType): Promise<Printer | null> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('printers')
     .select('*')
@@ -74,7 +74,7 @@ export async function createPrinter(input: PrinterInput): Promise<{ error?: stri
   const err = validate(input)
   if (err) return { error: err }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('printers')
     .insert({
@@ -103,7 +103,7 @@ export async function updatePrinter(
   id: string,
   patch: Partial<PrinterInput>
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Validate only the fields being changed
   const validateForUpdate = (): string | null => {
@@ -144,7 +144,7 @@ export async function updatePrinter(
 }
 
 export async function deletePrinter(id: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase.from('printers').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath('/ajustes')

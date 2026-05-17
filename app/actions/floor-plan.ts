@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { FloorPlan, Table, TableShape, TableZone, Shift } from '@/lib/types'
 
@@ -16,7 +16,7 @@ function checkTimeInShift(time: string, shift: Shift): boolean {
 }
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -29,7 +29,7 @@ export async function getFloorPlans(): Promise<FloorPlan[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('floor_plans')
     .select('*')
@@ -43,7 +43,7 @@ export async function getTables(): Promise<Table[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('tables')
     .select('*')
@@ -57,7 +57,7 @@ export async function getFloorPlanWithTables(floorPlanId: string) {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: floorPlan } = await supabase
     .from('floor_plans')
@@ -81,7 +81,7 @@ export async function getDefaultFloorPlan() {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: floorPlan } = await supabase
     .from('floor_plans')
@@ -112,7 +112,7 @@ export async function createFloorPlan(name: string): Promise<{ error?: string; f
 
   if (!name) return { error: 'Nombre requerido' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('floor_plans')
     .insert({
@@ -131,7 +131,7 @@ export async function createFloorPlan(name: string): Promise<{ error?: string; f
 }
 
 export async function deleteFloorPlan(floorPlanId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Delete all tables first (cascade should handle this, but being explicit)
   await supabase
@@ -164,7 +164,7 @@ export async function createTable(
     height: number
   }
 ): Promise<{ error?: string; table?: Table }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('tables')
     .insert({
@@ -185,7 +185,7 @@ export async function updateTable(
   tableId: string,
   updates: Partial<Omit<Table, 'id' | 'floor_plan_id' | 'created_at'>>
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('tables')
     .update(updates)
@@ -199,7 +199,7 @@ export async function updateTable(
 }
 
 export async function deleteTable(tableId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('tables')
     .delete()
@@ -217,7 +217,7 @@ export async function updateTableZonePosition(
   zoneX: number,
   zoneY: number
 ): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('tables')
     .update({ zone_x: zoneX, zone_y: zoneY })
@@ -234,7 +234,7 @@ export async function getTablesWithStatus(floorPlanId: string, date: string, shi
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Get all tables (exclude merged tables)
   const { data: tables } = await supabase

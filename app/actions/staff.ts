@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { getSession } from './auth'
 import { hashPin } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
@@ -10,7 +10,7 @@ export async function getStaff(): Promise<Staff[]> {
   const session = await getSession()
   if (!session || session.staff.role !== 'admin') return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('staff')
     .select('id, restaurant_id, name, role, created_at')
@@ -38,7 +38,7 @@ export async function createStaff(formData: FormData): Promise<{ error?: string;
 
   const pinHash = await hashPin(pin)
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('staff')
     .insert({
@@ -69,7 +69,7 @@ export async function updateStaffPin(
 
   const pinHash = await hashPin(newPin)
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('staff')
     .update({ pin_hash: pinHash })
@@ -91,7 +91,7 @@ export async function deleteStaff(staffId: string): Promise<{ error?: string }> 
     return { error: 'No puedes eliminarte a ti mismo' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('staff')
     .delete()

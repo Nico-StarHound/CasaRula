@@ -1,16 +1,16 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { RestaurantConfig } from '@/lib/types'
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase.from('restaurants').select('id').single()
   return data?.id || null
 }
 
 export async function getRestaurantConfig(): Promise<RestaurantConfig | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
@@ -26,7 +26,7 @@ export async function getRestaurantConfig(): Promise<RestaurantConfig | null> {
 export async function updateRestaurantConfig(
   config: Partial<Omit<RestaurantConfig, 'id' | 'restaurant_id' | 'created_at' | 'updated_at'>>
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'No restaurant found' }
 
@@ -62,7 +62,7 @@ export async function updateRestaurantConfig(
 }
 
 export async function uploadLogo(base64: string): Promise<{ url?: string; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'No restaurant found' }
 
@@ -108,13 +108,13 @@ export async function uploadLogo(base64: string): Promise<{ url?: string; error?
 }
 
 export async function getRestaurantName(): Promise<string> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase.from('restaurants').select('name').single()
   return data?.name || ''
 }
 
 export async function updateRestaurantName(name: string): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'No restaurant found' }
 

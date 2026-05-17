@@ -1,9 +1,9 @@
 import { getDefaultFloorPlan } from '@/app/actions/floor-plan'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { MapaClient } from './mapa-client'
 
 export default async function MapaPage() {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Get restaurant name
   const { data: restaurant } = await supabase

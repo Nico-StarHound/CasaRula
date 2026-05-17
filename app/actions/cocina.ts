@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 export interface KitchenItem {
   id: string
@@ -19,7 +19,7 @@ export interface KitchenOrder {
 }
 
 export async function getKitchenOrders(): Promise<KitchenOrder[]> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get restaurant ID
   const { data: restaurant } = await supabase
@@ -94,7 +94,7 @@ export async function getKitchenOrders(): Promise<KitchenOrder[]> {
 }
 
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Toggle between in_kitchen and ready
   const { data: item } = await supabase

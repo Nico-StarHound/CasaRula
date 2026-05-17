@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { enqueuePrintJob } from './print-jobs'
 
 export interface TicketItem {
@@ -39,7 +39,7 @@ export async function createTicket(data: {
   efectivo_entregado?: number
   opened_at?: string
 }): Promise<Ticket | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: restaurant } = await supabase
     .from('restaurants')
@@ -141,7 +141,7 @@ export async function createTicket(data: {
   }
 }
 
-async function generateTicketNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+async function generateTicketNumber(supabase: ReturnType<typeof createServiceClient>): Promise<string> {
   const today = new Date().toISOString().split('T')[0]
   
   const { count } = await supabase
@@ -167,7 +167,7 @@ export async function getTickets(
     dateTo?: string
   }
 ): Promise<Ticket[]> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   let query = supabase
     .from('tickets')
@@ -200,7 +200,7 @@ export async function getTickets(
 }
 
 export async function getTicketById(id: string): Promise<Ticket | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: ticket } = await supabase
     .from('tickets')
@@ -222,7 +222,7 @@ export async function getTicketById(id: string): Promise<Ticket | null> {
 }
 
 export async function getTicketsStats(dateFrom?: string, dateTo?: string) {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   let query = supabase
     .from('tickets')
@@ -254,7 +254,7 @@ export async function applyRefund(
   importe: number,
   motivo?: string
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('tickets')
@@ -273,7 +273,7 @@ export async function reopenTicket(ticketId: string): Promise<{
   success: boolean
   table_id?: string 
 }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: ticket } = await supabase
     .from('tickets')

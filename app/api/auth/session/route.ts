@@ -13,9 +13,16 @@ const JWT_SECRET = new TextEncoder().encode(
 )
 
 function getSupabase() {
+  // Use service_role here because, after RLS is applied (scripts/005_rls.sql),
+  // the `staff` table is not readable by anon — and we have to look up
+  // the PIN hash to verify it. service_role bypasses RLS. We're already
+  // on a route handler (server-side) so the key is safe.
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+    }
   )
 }
 

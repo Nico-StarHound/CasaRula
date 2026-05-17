@@ -1,11 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { WaitlistEntry, WaitlistStatus } from '@/lib/types'
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -18,7 +18,7 @@ export async function getWaitlist(): Promise<WaitlistEntry[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('waitlist')
     .select(`
@@ -46,7 +46,7 @@ export async function addToWaitlist(formData: FormData): Promise<{ error?: strin
     return { error: 'Nombre es requerido' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Check if guest exists by phone
   let guestId: string | null = null
@@ -91,7 +91,7 @@ export async function updateWaitlistStatus(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('waitlist')
     .update({ status })
@@ -108,7 +108,7 @@ export async function removeFromWaitlist(id: string): Promise<{ error?: string }
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('waitlist')
     .delete()
@@ -128,7 +128,7 @@ export async function seatFromWaitlist(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get waitlist entry
   const { data: entry } = await supabase

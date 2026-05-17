@@ -1,11 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { Reservation, ReservationStatus } from '@/lib/types'
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -18,7 +18,7 @@ export async function getReservations(date: string): Promise<Reservation[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('reservations')
     .select(`
@@ -37,7 +37,7 @@ export async function getReservation(id: string): Promise<Reservation | null> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('reservations')
     .select(`
@@ -66,7 +66,7 @@ export async function getReservation(id: string): Promise<Reservation | null> {
 export async function enrichReservationsWithTableIds(reservations: Reservation[]): Promise<Reservation[]> {
   if (reservations.length === 0) return reservations
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const reservationIds = reservations.map(r => r.id)
 
   const { data: junctionData } = await supabase
@@ -110,7 +110,7 @@ export async function createReservation(formData: FormData): Promise<{ error?: s
     return { error: 'Nombre, fecha y hora son requeridos' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Check if guest exists by phone
   let guestId: string | null = null
@@ -201,7 +201,7 @@ export async function updateReservation(
     return { error: 'Nombre, fecha y hora son requeridos' }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({
@@ -230,7 +230,7 @@ export async function updateReservationStatus(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // If marking as no_show, increment guest's no_show_count
   if (status === 'no_show') {
@@ -277,7 +277,7 @@ export async function changeReservationTable(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get the reservation being moved
   const { data: movingRes, error: fetchError } = await supabase
@@ -352,7 +352,7 @@ export async function changeReservationTables(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const primaryTableId = tableIds.length > 0 ? tableIds[0] : null
 
   // Update primary table_id
@@ -383,7 +383,7 @@ export async function deleteReservation(id: string): Promise<{ error?: string }>
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .delete()
@@ -408,7 +408,7 @@ export async function addToWaitlist(data: {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const now = new Date()
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
 
@@ -438,7 +438,7 @@ export async function assignTableFromWaitlist(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ is_waitlist: false, table_id: tableId })
@@ -462,7 +462,7 @@ export async function removeFromWaitlist(reservationId: string): Promise<{ succe
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ status: 'cancelled' })

@@ -4,7 +4,7 @@ import { BottomNav } from '@/components/bottom-nav'
 import { SessionWatcher } from '@/components/session-watcher'
 import { IdleLogout } from '@/components/idle-logout'
 import { OfflineBanner } from '@/components/offline-banner'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'restaurant-reservation-secret-key-change-in-production'
@@ -47,7 +47,7 @@ const HARDCODED_TABLES = [
 ] as const
 
 async function ensureRestaurantExists() {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Check if restaurant exists
   const { data: restaurants } = await supabase

@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { Table, Reservation, Shift, TableZone, TableStatus } from '@/lib/types'
 import { ZONE_ORDER } from '@/lib/types'
@@ -15,7 +15,7 @@ function shiftTimeCheck(timeStr: string, targetShift: Shift): boolean {
 }
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -41,7 +41,7 @@ export async function getListaData(date: string, shift: Shift): Promise<ListaDat
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { rows: [], groupedByZone: {} as Record<TableZone, ListaTableRow[]> }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Get all tables (exclude merged tables)
   const { data: tables } = await supabase
@@ -163,7 +163,7 @@ export async function getListaData(date: string, shift: Shift): Promise<ListaDat
 }
 
 export async function seatTable(reservationId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ status: 'seated' })
@@ -177,7 +177,7 @@ export async function seatTable(reservationId: string): Promise<{ error?: string
 }
 
 export async function markNoShow(reservationId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ status: 'no_show' })
@@ -191,7 +191,7 @@ export async function markNoShow(reservationId: string): Promise<{ error?: strin
 }
 
 export async function cancelReservation(reservationId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ status: 'cancelled' })
@@ -205,7 +205,7 @@ export async function cancelReservation(reservationId: string): Promise<{ error?
 }
 
 export async function releaseTable(reservationId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('reservations')
     .update({ status: 'completed' })
@@ -219,7 +219,7 @@ export async function releaseTable(reservationId: string): Promise<{ error?: str
 }
 
 export async function blockTable(tableId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('tables')
     .update({ is_blocked: true })
@@ -233,7 +233,7 @@ export async function blockTable(tableId: string): Promise<{ error?: string }> {
 }
 
 export async function unblockTable(tableId: string): Promise<{ error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('tables')
     .update({ is_blocked: false })
@@ -254,7 +254,7 @@ export async function createWalkIn(
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const now = new Date()
   const date = now.toISOString().split('T')[0]
   const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
@@ -291,7 +291,7 @@ export async function getWaitlist(date: string): Promise<Reservation[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('reservations')
     .select('*, guest:guests(id, name, is_vip)')

@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { PinLogin } from '@/components/pin-login'
 
 export const runtime = 'nodejs'
@@ -44,7 +44,7 @@ export default async function LoginPage({
   // PIN, and (b) recreated state we don't want recreated by accident.
   // Initial setup is now done by running scripts/001_create_tables.sql
   // and using the /admin endpoint with a properly chosen admin PIN.
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data: restaurant } = await supabase
     .from('restaurants')
     .select('name')

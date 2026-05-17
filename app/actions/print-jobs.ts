@@ -3,7 +3,7 @@
 // Print jobs queue helpers.
 // All print operations go through here so the daemon can pick them up.
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 export type PrintJobKind =
   | 'comanda_cocina'
@@ -31,7 +31,7 @@ interface EnqueueArgs {
  */
 export async function enqueuePrintJob(args: EnqueueArgs): Promise<{ success: boolean; jobId?: string }> {
   try {
-    const supabase = await createClient()
+    const supabase = createServiceClient()
 
     // Resolve the active printer for this type (single source of truth = the
     // printers table). If none is configured, we still enqueue — the daemon

@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { Reservation, Shift } from '@/lib/types'
 
 /** Shift time check - Comida: 12:00-16:59, Cena: 17:00-03:59 */
@@ -13,7 +13,7 @@ function shiftTimeCheck(timeStr: string, targetShift: Shift): boolean {
 }
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -50,7 +50,7 @@ export async function getDashboardData(date: string, shift: Shift): Promise<Dash
     }
   }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // 1. Fetch all tables (exclude merged)
   const { data: tables } = await supabase

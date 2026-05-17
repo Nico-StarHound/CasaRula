@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SignJWT } from 'jose'
 import { cookies } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { hashPin } from '@/lib/auth'
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'El PIN debe ser de 4 dígitos' }, { status: 400 })
   }
   
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Check if restaurant already exists
   const { data: existingRestaurant } = await supabase

@@ -1,12 +1,12 @@
 import { getStaff } from '@/app/actions/staff'
 import { getFloorPlans, getFloorPlanWithTables } from '@/app/actions/floor-plan'
 import { getRestaurantConfig } from '@/app/actions/config'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { AjustesClient } from './ajustes-client'
 import type { Table } from '@/lib/types'
 
 export default async function AjustesPage() {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Get restaurant
   const { data: restaurant } = await supabase

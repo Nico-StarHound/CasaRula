@@ -1,11 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import type { Guest } from '@/lib/types'
 
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -18,7 +18,7 @@ export async function getGuests(search?: string): Promise<Guest[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   let query = supabase
     .from('guests')
     .select('*')
@@ -37,7 +37,7 @@ export async function getGuest(id: string): Promise<Guest | null> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('guests')
     .select('*')
@@ -52,7 +52,7 @@ export async function lookupGuestByPhone(phone: string): Promise<Guest | null> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('guests')
     .select('*')
@@ -71,7 +71,7 @@ export async function searchGuestsByPhone(query: string): Promise<Guest[]> {
   const digits = query.replace(/\D/g, '')
   if (digits.length < 3) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('guests')
     .select('*')
@@ -99,7 +99,7 @@ export async function createGuest(formData: FormData): Promise<{ error?: string;
 
   const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('guests')
     .insert({
@@ -139,7 +139,7 @@ export async function updateGuest(
 
   const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('guests')
     .update({
@@ -162,7 +162,7 @@ export async function deleteGuest(id: string): Promise<{ error?: string }> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'Restaurante no encontrado' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { error } = await supabase
     .from('guests')
     .delete()
@@ -179,7 +179,7 @@ export async function toggleVip(guestId: string, isVip: boolean): Promise<{ succ
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('guests')
     .update({ is_vip: isVip })

@@ -1,7 +1,7 @@
 'use server'
 
 // Comandas order management actions v3
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { Table } from '@/lib/types'
 import { enqueuePrintJob, type ComandaTicketItem } from './print-jobs'
 
@@ -12,7 +12,7 @@ interface TableWithOrder extends Table {
 }
 
 export async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -25,7 +25,7 @@ export async function getTablesForComandas(): Promise<TableWithOrder[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Get all tables
   const { data: tables } = await supabase
@@ -90,7 +90,7 @@ export async function getMenuWithCategories(): Promise<MenuCategory[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Use 5 separate queries for reliability (nested joins can be flaky)
   const [
@@ -183,7 +183,7 @@ export interface Order {
 }
 
 export async function getOpenOrder(tableId: string): Promise<Order | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   const { data: order } = await supabase
     .from('orders')
@@ -225,13 +225,13 @@ export async function getOpenOrder(tableId: string): Promise<Order | null> {
 }
 
 export async function cancelOrder(orderId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId)
   return { success: true }
 }
 
 export async function setPedidaCuenta(orderId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('orders')
     .update({ cuenta_pedida: true })
@@ -244,7 +244,7 @@ export async function setPedidaCuenta(orderId: string): Promise<{ success: boole
  * before they pay (informal, no ticket number, no payment info).
  */
 export async function printCuentaProvisional(orderId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false }
 
@@ -304,7 +304,7 @@ export async function updateOrderServiceConfig(
     rondas?: string[][] | null
   }
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('orders')
     .update({
@@ -322,7 +322,7 @@ export async function seatTableWalkIn(
   guestName?: string,
   guestPhone?: string
 ): Promise<Order | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
@@ -378,7 +378,7 @@ export async function openOrder(tableId: string, comensales: number): Promise<Or
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // CONCURRENCY: if there's already an open order for this table, reuse it
   // (do NOT cancel and recreate — that was destroying in-progress work when
@@ -439,7 +439,7 @@ export async function getOrCreateOrder(tableId: string): Promise<Order | null> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return null
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Validate that the table actually exists and belongs to this restaurant.
   // Without this, hitting /comandas/tomar/<random-uuid> would silently create
@@ -520,7 +520,7 @@ export async function addItemToOrder(
   orderId: string,
   item: { name: string; price: number; quantity: number; notes?: string; printer_target?: string; menu_item_id?: string }
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Resolve printer_target: explicit > inherited from category > 'cocina' default.
   // We always look it up if missing so the UI doesn't have to remember to pass it.
@@ -564,7 +564,7 @@ export async function updateOrderItemQuantity(
   itemId: string,
   quantity: number
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   if (quantity <= 0) {
     await supabase.from('order_items').delete().eq('id', itemId)
@@ -593,13 +593,13 @@ export async function updateComensales(
   orderId: string,
   comensales: number
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase.from('orders').update({ comensales }).eq('id', orderId)
   return { success: true }
 }
 
 export async function sendToKitchen(orderId: string): Promise<{ success: boolean; cocina: boolean; barra: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const restaurantId = await getRestaurantId()
 
   // Get pending order items with their printer targets
@@ -717,7 +717,7 @@ export async function sendToKitchen(orderId: string): Promise<{ success: boolean
 }
 
 async function recalculateOrderTotal(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   const { data: items } = await supabase
     .from('order_items')
@@ -737,7 +737,7 @@ export async function cancelOrderItem(
   itemId: string,
   motivo?: string
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Get the item details before updating (need order_id, status, name, qty, target)
   const { data: item } = await supabase
@@ -806,7 +806,7 @@ export async function updateOrderItemNote(
   itemId: string,
   note: string
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('order_items')
@@ -823,7 +823,7 @@ export async function applyDiscount(
   valor: number,
   motivo?: string
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('orders')
@@ -838,7 +838,7 @@ export async function applyDiscount(
 }
 
 export async function removeDiscount(orderId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('orders')
@@ -856,7 +856,7 @@ export async function markAsInvitation(
   itemIds: string[],
   motivo?: string
 ): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('order_items')
@@ -881,7 +881,7 @@ export async function markAsInvitation(
 }
 
 export async function removeInvitation(itemId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: item } = await supabase
     .from('order_items')
@@ -905,7 +905,7 @@ export async function removeInvitation(itemId: string): Promise<{ success: boole
 }
 
 export async function releaseTableAfterPayment(tableId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Find only the most recently seated reservation
   // (not all seated ones — table could be doblada)
@@ -931,7 +931,7 @@ export async function releaseTableAfterPayment(tableId: string): Promise<{ succe
 // ========== KDS (Kitchen Display System) ==========
 
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('order_items')
     .update({ status: 'ready', ready_at: new Date().toISOString() })
@@ -940,7 +940,7 @@ export async function markItemReady(itemId: string): Promise<{ success: boolean 
 }
 
 export async function markAllItemsReady(orderId: string): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('order_items')
     .update({ status: 'ready', ready_at: new Date().toISOString() })
@@ -950,7 +950,7 @@ export async function markAllItemsReady(orderId: string): Promise<{ success: boo
 }
 
 export async function updateKdsPosition(itemId: string, position: number): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('order_items')
     .update({ kds_position: position })
@@ -959,7 +959,7 @@ export async function updateKdsPosition(itemId: string, position: number): Promi
 }
 
 export async function setOrderUrgente(orderId: string, urgente: boolean): Promise<{ success: boolean }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   await supabase
     .from('orders')
     .update({ urgente })
@@ -989,7 +989,7 @@ export async function getKdsItems(): Promise<KdsItem[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: items } = await supabase
     .from('order_items')
@@ -1012,7 +1012,7 @@ export async function getOrderForCaja(tableId: string): Promise<{
   table: { label: string; zone: string } | null
   discount: { tipo: string; valor: number; motivo: string | null } | null
 } | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   const { data: order } = await supabase
     .from('orders')

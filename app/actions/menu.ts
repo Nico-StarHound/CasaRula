@@ -1,10 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 
 // Get restaurant ID helper
 async function getRestaurantId(): Promise<string | null> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('restaurants')
     .select('id')
@@ -56,7 +56,7 @@ export async function getMenuCategories(): Promise<MenuCategory[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   const { data } = await supabase
     .from('menu_categories')
     .select('*')
@@ -70,7 +70,7 @@ export async function getMenuItems(categoryId?: string): Promise<MenuItem[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   let query = supabase
     .from('menu_items')
     .select('*')
@@ -106,7 +106,7 @@ export async function seedMenuData(): Promise<{ success: boolean; error?: string
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { success: false, error: 'No restaurant found' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
 
   // Check if menu already seeded
   const { data: existingCategories } = await supabase
@@ -240,7 +240,7 @@ export async function createMenuCategory(data: {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'No restaurant found' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: category, error } = await supabase
     .from('menu_categories')
@@ -261,7 +261,7 @@ export async function updateMenuCategory(
   id: string,
   data: { name?: string; printer_target?: 'cocina' | 'barra' | 'caja'; sort_order?: number }
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { error } = await supabase
     .from('menu_categories')
@@ -273,7 +273,7 @@ export async function updateMenuCategory(
 }
 
 export async function deleteMenuCategory(id: string): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { error } = await supabase
     .from('menu_categories')
@@ -302,7 +302,7 @@ export async function createMenuItem(data: {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'No restaurant found' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: item, error } = await supabase
     .from('menu_items')
@@ -332,7 +332,7 @@ export async function updateMenuItem(
   id: string,
   data: Partial<Omit<MenuItem, 'id'>>
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   // Also update is_available when available changes
   const updateData: Record<string, unknown> = { ...data }
@@ -350,7 +350,7 @@ export async function updateMenuItem(
 }
 
 export async function deleteMenuItem(id: string): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { error } = await supabase
     .from('menu_items')
@@ -365,7 +365,7 @@ export async function toggleMenuItemAvailable(
   id: string,
   available: boolean
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { error } = await supabase
     .from('menu_items')
@@ -382,7 +382,7 @@ export async function getModifierGroups(): Promise<ModifierGroup[]> {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return []
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: groups } = await supabase
     .from('modifier_groups')
@@ -412,7 +412,7 @@ export async function createModifierGroup(data: {
   const restaurantId = await getRestaurantId()
   if (!restaurantId) return { error: 'No restaurant found' }
 
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data: group, error: groupError } = await supabase
     .from('modifier_groups')
@@ -457,7 +457,7 @@ export async function updateModifierGroup(
     options?: { id?: string; name: string; price_delta: number }[]
   }
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { error: groupError } = await supabase
     .from('modifier_groups')
@@ -488,7 +488,7 @@ export async function updateModifierGroup(
 }
 
 export async function deleteModifierGroup(id: string): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase.from('modifier_options').delete().eq('group_id', id)
   
@@ -505,7 +505,7 @@ export async function assignModifierToItems(
   groupId: string,
   itemIds: string[]
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   await supabase
     .from('menu_item_modifiers')
@@ -529,7 +529,7 @@ export async function assignModifierToItems(
 }
 
 export async function getModifierAssignments(groupId: string): Promise<string[]> {
-  const supabase = await createClient()
+  const supabase = createServiceClient()
   
   const { data } = await supabase
     .from('menu_item_modifiers')
