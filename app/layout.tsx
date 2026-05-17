@@ -1,19 +1,20 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { ServiceWorkerRegistration } from '@/components/service-worker-registration'
 import './globals.css'
 
 const _inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'Reservas',
-  description: 'Sistema de gestión de reservas para restaurantes',
+  title: 'Casa Rula',
+  description: 'Sistema de gestión de Casa Rula',
   generator: 'v0.app',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Reservas',
+    title: 'Casa Rula',
   },
   icons: {
     icon: [
@@ -54,6 +55,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="font-sans antialiased">
+        <ServiceWorkerRegistration />
         {children}
         <Analytics />
       </body>
