@@ -42,30 +42,44 @@ export default function CocinaPage() {
   //   from the same table = 1 chime, not 5.
   const seenOrderIdsRef = useRef<Set<string> | null>(null)
 
-  // Plays a short WebAudio chime. We don't ship an audio file because
-  // browsers can be picky about autoplay and external resources; a
-  // synthesized tone with the Web Audio API works offline and needs no
+  // Plays a short "PI-PI" two-beep chime. We don't ship an audio file
+  // because browsers can be picky about autoplay and external resources;
+  // a synthesized tone with the Web Audio API works offline and needs no
   // user gesture once the tab has been interacted with at least once
   // (which it has — the cook tapped to log in).
   const playDing = useCallback(() => {
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       const ctx = new AudioCtx()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      // Two-tone "ding" — high then slightly lower. ~250ms total.
-      osc.frequency.setValueAtTime(880, ctx.currentTime)
-      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.25)
-      gain.gain.setValueAtTime(0.001, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start(ctx.currentTime)
-      osc.stop(ctx.currentTime + 0.3)
-      // Close the context shortly after so we don't leak audio nodes
-      // (we create a fresh one each ding).
-      osc.onended = () => { void ctx.close() }
+
+      // Helper: schedule one beep at offset seconds from now.
+      const beep = (offset: number) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        // Square wave for a sharper "pi" sound (vs sine which is softer)
+        osc.type = 'square'
+        osc.frequency.setValueAtTime(1000, ctx.currentTime + offset)
+        // Volume envelope: quick attack, hold, quick release. Peak 0.5
+        // is loud — square wave hits hard, anything over ~0.6 starts to
+        // sound distorted on cheap tablet speakers.
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset)
+        gain.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + offset + 0.01)
+        gain.gain.setValueAtTime(0.5, ctx.currentTime + offset + 0.12)
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.15)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(ctx.currentTime + offset)
+        osc.stop(ctx.currentTime + offset + 0.16)
+      }
+
+      // PI ... PI — two beeps separated by a short gap so they sound
+      // distinctly like an alert and not like one long tone.
+      beep(0)
+      beep(0.22)
+
+      // Close the context after both beeps have finished so we don't
+      // leak audio nodes (a fresh ctx is created on each call).
+      setTimeout(() => { void ctx.close() }, 600)
     } catch {
       // Audio context creation can fail (autoplay policy on a tab
       // that's never been touched). We silently ignore — the cook
