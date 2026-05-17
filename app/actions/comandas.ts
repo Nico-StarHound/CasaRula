@@ -932,20 +932,116 @@ export async function releaseTableAfterPayment(tableId: string): Promise<{ succe
 
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
+  // Marca el item como ready y lo saca de la cola de preparación al
+  // mismo tiempo. Marcar listo desde la cola O desde la lista
+  // izquierda hace exactamente lo mismo (un solo item, un solo
+  // estado) — son dos vistas de la misma fila.
   await supabase
     .from('order_items')
-    .update({ status: 'ready', ready_at: new Date().toISOString() })
+    .update({
+      status: 'ready',
+      ready_at: new Date().toISOString(),
+      in_prep_queue_at: null,
+      prep_queue_position: null,
+    })
     .eq('id', itemId)
   return { success: true }
 }
 
 export async function markAllItemsReady(orderId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
+  // "Listo todo" para una mesa: pasa todos los pendientes a ready y
+  // vacía la cola para ese order.
   await supabase
     .from('order_items')
-    .update({ status: 'ready', ready_at: new Date().toISOString() })
+    .update({
+      status: 'ready',
+      ready_at: new Date().toISOString(),
+      in_prep_queue_at: null,
+      prep_queue_position: null,
+    })
     .eq('order_id', orderId)
     .eq('status', 'in_kitchen')
+  return { success: true }
+}
+
+// =====================================================================
+// Cola de preparación
+// =====================================================================
+
+// Añade un item a la cola de preparación. Posición = max actual + 1
+// (el más recién tocado al final). Si ya estaba en la cola, no hace
+// nada — toques repetidos no la desordenan.
+export async function addItemToPrepQueue(itemId: string): Promise<{ success: boolean }> {
+  const supabase = createServiceClient()
+
+  const { data: existing } = await supabase
+    .from('order_items')
+    .select('in_prep_queue_at')
+    .eq('id', itemId)
+    .single()
+
+  if (existing?.in_prep_queue_at) {
+    // Ya está en cola — toque repetido, ignoramos.
+    return { success: true }
+  }
+
+  // Calcular siguiente posición. Usamos DOUBLE para poder insertar
+  // entre dos sin renumerar (drag-drop). Nuevo item va al final.
+  const { data: maxRow } = await supabase
+    .from('order_items')
+    .select('prep_queue_position')
+    .not('prep_queue_position', 'is', null)
+    .order('prep_queue_position', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextPos = (maxRow?.prep_queue_position ?? 0) + 1
+
+  await supabase
+    .from('order_items')
+    .update({
+      in_prep_queue_at: new Date().toISOString(),
+      prep_queue_position: nextPos,
+    })
+    .eq('id', itemId)
+
+  return { success: true }
+}
+
+// Quita un item de la cola sin marcarlo listo. Caso: cocinero tocó
+// sin querer. No cambia el status (sigue in_kitchen).
+export async function removeItemFromPrepQueue(itemId: string): Promise<{ success: boolean }> {
+  const supabase = createServiceClient()
+  await supabase
+    .from('order_items')
+    .update({
+      in_prep_queue_at: null,
+      prep_queue_position: null,
+    })
+    .eq('id', itemId)
+  return { success: true }
+}
+
+// Reordena la cola. Recibe el array completo de itemIds en el nuevo
+// orden y les asigna posiciones 1..N. Es la forma menos error-prone
+// de manejar drag-drop: el cliente reorganiza visualmente y manda el
+// orden final, en lugar de calcular fracciones en el cliente.
+export async function reorderPrepQueue(itemIds: string[]): Promise<{ success: boolean }> {
+  if (itemIds.length === 0) return { success: true }
+  const supabase = createServiceClient()
+  // Postgres no tiene un UPDATE batch elegante para "asigna estos
+  // valores a estos ids"; iteramos. Para una cola típica (< 30 items
+  // simultáneos) es trivial. Si la cola creciera mucho, se podría
+  // construir una sola query con CASE WHEN.
+  await Promise.all(
+    itemIds.map((id, idx) =>
+      supabase
+        .from('order_items')
+        .update({ prep_queue_position: idx + 1 })
+        .eq('id', id)
+    )
+  )
   return { success: true }
 }
 
@@ -975,6 +1071,11 @@ export interface KdsItem {
   status: string
   sent_at: string | null
   kds_position: number
+  // Cola de preparación. Si in_prep_queue_at !== null, el item está
+  // activado por el cocinero y debe aparecer en la columna derecha
+  // del KDS + resaltado en azul en la izquierda. Ver scripts/007.
+  in_prep_queue_at: string | null
+  prep_queue_position: number | null
   modifier_summary: { name: string; price: number }[] | null
   order: {
     id: string
@@ -990,12 +1091,13 @@ export async function getKdsItems(): Promise<KdsItem[]> {
   if (!restaurantId) return []
 
   const supabase = createServiceClient()
-  
+
   const { data: items } = await supabase
     .from('order_items')
     .select(`
       id, name, quantity, notes, status,
       sent_at, kds_position, modifier_summary,
+      in_prep_queue_at, prep_queue_position,
       order:orders (
         id, nota_mesa, urgente, comensales,
         table:tables ( id, label )
