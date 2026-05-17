@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, Zap } from 'lucide-react'
+import { Check, Zap, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -30,9 +30,45 @@ import {
   addItemToPrepQueue,
   removeItemFromPrepQueue,
   reorderPrepQueue,
+  restoreItemToKitchen,
   type KdsItem
 } from '@/app/actions/comandas'
 import { getRestaurantConfig } from '@/app/actions/config'
+
+// Acciones reversibles del KDS. Cada una guarda lo mínimo para
+// poder revertirla con una llamada al server.
+// - 'add_to_queue':    el revert es removeItemFromPrepQueue.
+// - 'remove_from_queue': el revert es addItemToPrepQueue. Guardamos
+//                        la position que tenía por si tocaba reordenar
+//                        (lo simplificamos: la añadimos al final, ya
+//                        que la cola es un orden de trabajo flexible).
+// - 'mark_ready':      el revert es restoreItemToKitchen, restituyendo
+//                       in_prep_queue_at + prep_queue_position si los
+//                       tenía.
+// - 'mark_all_ready':  el revert es restoreItemToKitchen por cada item
+//                       afectado.
+//
+// Limitamos el stack a las últimas 5 acciones — el caso de uso es
+// "ups, acabo de tocar mal", no historial completo. Más acciones
+// solo gastan memoria sin aportar.
+type UndoAction =
+  | { kind: 'add_to_queue'; itemId: string; label: string }
+  | { kind: 'remove_from_queue'; itemId: string; label: string }
+  | {
+      kind: 'mark_ready'
+      itemId: string
+      label: string
+      wasInQueueAt: string | null
+      wasQueuePosition: number | null
+    }
+  | {
+      kind: 'mark_all_ready'
+      orderId: string
+      label: string
+      affected: Array<{ id: string; in_prep_queue_at: string | null; prep_queue_position: number | null }>
+    }
+
+const UNDO_STACK_LIMIT = 5
 
 interface OrderGroup {
   orderId: string
@@ -50,6 +86,10 @@ export default function CocinaPage() {
   const [dangerMinutes, setDangerMinutes] = useState(20)
   const [now, setNow] = useState(new Date())
   const [loading, setLoading] = useState(true)
+  // Stack de acciones que se pueden deshacer. El más reciente al final.
+  // Se vacía solo cuando se pulsa Deshacer (saca una) o cuando excede
+  // el límite (descarta la más antigua).
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([])
 
   // Set of orderIds we've already seen in this session. Used to detect
   // "comanda nueva" and ring a soft chime when a NEW order arrives.
@@ -238,6 +278,19 @@ export default function CocinaPage() {
   }
 
   const handleMarkReady = async (itemId: string) => {
+    // Antes de quitarlo, capturar lo necesario para deshacer: si
+    // estaba en cola, su position; etiqueta para el botón.
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
+
+    pushUndo({
+      kind: 'mark_ready',
+      itemId,
+      label: `${item.quantity}x ${item.name}`,
+      wasInQueueAt: item.in_prep_queue_at,
+      wasQueuePosition: item.prep_queue_position,
+    })
+
     // Optimistic UI: quita el item de la lista local antes de esperar
     // a la BD. El Realtime de Supabase repondría el estado correcto
     // si algo falla pero la respuesta visual es inmediata.
@@ -246,8 +299,90 @@ export default function CocinaPage() {
   }
 
   const handleMarkAllReady = async (orderId: string) => {
+    // Capturar TODOS los items que esa orden tenía en cocina, con sus
+    // estados de cola, para poder restituir uno por uno si se deshace.
+    const affected = items
+      .filter(i => i.order?.id === orderId)
+      .map(i => ({
+        id: i.id,
+        in_prep_queue_at: i.in_prep_queue_at,
+        prep_queue_position: i.prep_queue_position,
+      }))
+    const tableLabel = items.find(i => i.order?.id === orderId)?.order?.table?.label ?? 'mesa'
+
+    pushUndo({
+      kind: 'mark_all_ready',
+      orderId,
+      label: `Mesa ${tableLabel} (${affected.length} platos)`,
+      affected,
+    })
+
     setItems(prev => prev.filter(i => i.order?.id !== orderId))
     await markAllItemsReady(orderId)
+  }
+
+  // Push a undo action with stack limit. Most recent at the end.
+  const pushUndo = (action: UndoAction) => {
+    setUndoStack(prev => {
+      const next = [...prev, action]
+      if (next.length > UNDO_STACK_LIMIT) next.shift()
+      return next
+    })
+  }
+
+  // Pop+revert the most recent action. The button is disabled while
+  // the stack is empty so we only get here with at least one entry.
+  const handleUndo = async () => {
+    if (undoStack.length === 0) return
+    const last = undoStack[undoStack.length - 1]
+    setUndoStack(prev => prev.slice(0, -1))
+
+    // Realtime traerá el estado correcto en segundos, pero hacemos
+    // optimistic para que el undo sea instantáneo. La lógica de
+    // optimistic varía según el tipo de acción.
+    switch (last.kind) {
+      case 'add_to_queue':
+        // Revertir un "añadir a cola" = sacar de cola.
+        setItems(prev => prev.map(i =>
+          i.id === last.itemId
+            ? { ...i, in_prep_queue_at: null, prep_queue_position: null }
+            : i
+        ))
+        await removeItemFromPrepQueue(last.itemId)
+        break
+
+      case 'remove_from_queue':
+        // Revertir un "sacar de cola" = volver a meter. Lo añadimos
+        // al final; si el cocinero quería un orden específico, puede
+        // arrastrar después.
+        await addItemToPrepQueue(last.itemId)
+        break
+
+      case 'mark_ready':
+        // Restituir status='in_kitchen' + opcionalmente la cola.
+        await restoreItemToKitchen(last.itemId, {
+          restoreToQueueAt: last.wasInQueueAt ?? undefined,
+          restoreToQueuePosition: last.wasQueuePosition ?? undefined,
+        })
+        break
+
+      case 'mark_all_ready':
+        // Por cada item afectado, restituirlo. Los hacemos en
+        // paralelo — son updates independientes.
+        await Promise.all(
+          last.affected.map(a =>
+            restoreItemToKitchen(a.id, {
+              restoreToQueueAt: a.in_prep_queue_at ?? undefined,
+              restoreToQueuePosition: a.prep_queue_position ?? undefined,
+            })
+          )
+        )
+        break
+    }
+
+    // Forzar refetch para que el estado local refleje exactamente lo
+    // que hay en BD (en caso de divergencia con el optimistic).
+    await fetchItems()
   }
 
   // Toggle del item entre "en cocina normal" y "en cola de preparación".
@@ -259,6 +394,12 @@ export default function CocinaPage() {
     const isInQueue = item.in_prep_queue_at !== null
 
     if (isInQueue) {
+      // Sacar de la cola — registrar undo "remove_from_queue".
+      pushUndo({
+        kind: 'remove_from_queue',
+        itemId: item.id,
+        label: `${item.quantity}x ${item.name}`,
+      })
       // Optimistic remove
       setItems(prev => prev.map(i =>
         i.id === item.id
@@ -267,6 +408,12 @@ export default function CocinaPage() {
       ))
       await removeItemFromPrepQueue(item.id)
     } else {
+      // Añadir a la cola — registrar undo "add_to_queue".
+      pushUndo({
+        kind: 'add_to_queue',
+        itemId: item.id,
+        label: `${item.quantity}x ${item.name}`,
+      })
       // Optimistic add — calcular siguiente posición localmente
       const maxPos = items.reduce(
         (max, i) => i.prep_queue_position !== null && i.prep_queue_position > max
@@ -343,7 +490,12 @@ export default function CocinaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+    // El KDS es una pantalla de uso pulsable, no de lectura — desactivar
+    // la selección de texto a nivel root evita que un drag-and-drop o
+    // un tap mantenido en la cola seleccione texto y se vea raro o
+    // dispare el menú contextual del navegador en tablets. Caret se
+    // sigue permitiendo en inputs si los hubiera por el "caret-auto".
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col select-none [-webkit-user-select:none]">
       <SessionWatcher />
       {/* Header */}
       <header className="border-b border-gray-800 px-4 py-3 flex items-center gap-3 flex-shrink-0">
@@ -351,7 +503,27 @@ export default function CocinaPage() {
         <span className="text-sm text-gray-500">
           {items.length} {items.length === 1 ? 'plato' : 'platos'} en cocina
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Botón Deshacer — solo activo si hay al menos una acción
+              en el stack. Muestra el label de la última acción para
+              que el cocinero sepa qué va a revertir antes de pulsar.
+              Limit visible para que no crezca infinitamente — el
+              tooltip nativo del title atribute basta. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={undoStack.length === 0}
+            onClick={handleUndo}
+            title={
+              undoStack.length === 0
+                ? 'Nada que deshacer'
+                : `Deshacer: ${undoStack[undoStack.length - 1].label}`
+            }
+            className="text-gray-300 hover:text-white"
+          >
+            <Undo2 className="h-4 w-4 mr-1" />
+            Deshacer
+          </Button>
           <UserMenu />
         </div>
       </header>

@@ -930,6 +930,31 @@ export async function releaseTableAfterPayment(tableId: string): Promise<{ succe
 
 // ========== KDS (Kitchen Display System) ==========
 
+// Revertir un "Listo". Devuelve el item a 'in_kitchen' y opcionalmente
+// lo restituye a la cola de preparación con su posición previa. Lo
+// usa el botón "Deshacer" del KDS cuando el cocinero se equivoca.
+//
+// NOTA fiscal: no toca tickets ni order totals — el item sigue
+// existiendo en el order, sólo cambia su estado de servicio. Marcar
+// listo no genera ningún registro fiscal, así que deshacerlo es
+// completamente seguro.
+export async function restoreItemToKitchen(
+  itemId: string,
+  opts?: { restoreToQueueAt?: string; restoreToQueuePosition?: number }
+): Promise<{ success: boolean }> {
+  const supabase = createServiceClient()
+  await supabase
+    .from('order_items')
+    .update({
+      status: 'in_kitchen',
+      ready_at: null,
+      in_prep_queue_at: opts?.restoreToQueueAt ?? null,
+      prep_queue_position: opts?.restoreToQueuePosition ?? null,
+    })
+    .eq('id', itemId)
+  return { success: true }
+}
+
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
   // Marca el item como ready y lo saca de la cola de preparación al
@@ -948,10 +973,20 @@ export async function markItemReady(itemId: string): Promise<{ success: boolean 
   return { success: true }
 }
 
-export async function markAllItemsReady(orderId: string): Promise<{ success: boolean }> {
+export async function markAllItemsReady(orderId: string): Promise<{
+  success: boolean
+  affected: Array<{ id: string; in_prep_queue_at: string | null; prep_queue_position: number | null }>
+}> {
   const supabase = createServiceClient()
-  // "Listo todo" para una mesa: pasa todos los pendientes a ready y
-  // vacía la cola para ese order.
+  // Snapshot ANTES de actualizar — necesitamos saber qué items
+  // estaban en cola y dónde, para poder restituirlos exactamente
+  // como estaban si el cocinero hace Deshacer.
+  const { data: snapshot } = await supabase
+    .from('order_items')
+    .select('id, in_prep_queue_at, prep_queue_position')
+    .eq('order_id', orderId)
+    .eq('status', 'in_kitchen')
+
   await supabase
     .from('order_items')
     .update({
@@ -962,7 +997,8 @@ export async function markAllItemsReady(orderId: string): Promise<{ success: boo
     })
     .eq('order_id', orderId)
     .eq('status', 'in_kitchen')
-  return { success: true }
+
+  return { success: true, affected: snapshot || [] }
 }
 
 // =====================================================================
