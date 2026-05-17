@@ -646,6 +646,14 @@ export async function sendToKitchen(orderId: string): Promise<{ success: boolean
 
   // Enqueue print jobs (the daemon picks them up via Realtime).
   // We enqueue ONE job per destination that has items.
+  //
+  // If any enqueue fails (Supabase down, network blip, printer not
+  // configured for that type) we return success:false so the UI can
+  // warn the camarero. The items are already marked in_kitchen in the
+  // DB so the KDS will still display them — kitchen staff can still
+  // cook — but the camarero needs to know the paper ticket may not
+  // have been queued and verbally let the kitchen know.
+  let allEnqueued = true
   if (restaurantId) {
     const buildPayload = (items: typeof pendingItems): ComandaTicketItem[] =>
       items.map(i => ({
@@ -664,30 +672,32 @@ export async function sendToKitchen(orderId: string): Promise<{ success: boolean
     }
 
     if (cocinaItems.length > 0) {
-      await enqueuePrintJob({
+      const r = await enqueuePrintJob({
         restaurantId,
         kind: 'comanda_cocina',
         printerType: 'cocina',
         orderId,
         payload: { ...baseMeta, items: buildPayload(cocinaItems) },
       })
+      if (!r.success) allEnqueued = false
     }
 
     if (barraItems.length > 0) {
-      await enqueuePrintJob({
+      const r = await enqueuePrintJob({
         restaurantId,
         kind: 'comanda_barra',
         printerType: 'barra',
         orderId,
         payload: { ...baseMeta, items: buildPayload(barraItems) },
       })
+      if (!r.success) allEnqueued = false
     }
   }
 
-  return { 
-    success: true, 
-    cocina: cocinaItems.length > 0, 
-    barra: barraItems.length > 0 
+  return {
+    success: allEnqueued,
+    cocina: cocinaItems.length > 0,
+    barra: barraItems.length > 0
   }
 }
 

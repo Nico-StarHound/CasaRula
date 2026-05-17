@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Tag, Gift, Banknote, CreditCard, Wallet, Users, Check, X } from 'lucide-react'
+import { ArrowLeft, Tag, Gift, Banknote, CreditCard, Wallet, Users, Check, X, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -54,6 +54,9 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
   const [efectivoMixto, setEfectivoMixto] = useState('')
   const [tarjetaMixto, setTarjetaMixto] = useState('')
   const [processing, setProcessing] = useState(false)
+  // Persistent error banner if the charge fails. Like sendToKitchen, we
+  // refuse to navigate away or claim success unless the server confirmed.
+  const [chargeError, setChargeError] = useState<string | null>(null)
 
   // Discount sheet state
   const [discountSheetOpen, setDiscountSheetOpen] = useState(false)
@@ -173,6 +176,7 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
   const handleCobrar = async () => {
     if (!order || !paymentMethod) return
     setProcessing(true)
+    setChargeError(null)
 
     const ticketItems: TicketItem[] = items.map(item => ({
       name: item.name,
@@ -180,22 +184,36 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
       price: item.es_invitacion ? 0 : item.price
     }))
 
-    const ticket = await createTicket({
-      order_id: order.id,
-      table_label: tableInfo?.label || 'Mesa',
-      staff_name: staffName,
-      comensales: order.comensales,
-      items: ticketItems,
-      payment_method: paymentMethod,
-      efectivo_entregado: paymentMethod === 'efectivo' ? parseFloat(efectivoEntregado) : undefined,
-    })
+    // Same robustness as sendToKitchen: do NOT release the table or navigate
+    // unless the ticket actually persisted. A "ghost charge" is the worst
+    // case — the table would look free in the map but the customer's
+    // payment wasn't recorded. Better to look stuck and retry than to
+    // lose a sale silently.
+    try {
+      const ticket = await createTicket({
+        order_id: order.id,
+        table_label: tableInfo?.label || 'Mesa',
+        staff_name: staffName,
+        comensales: order.comensales,
+        items: ticketItems,
+        payment_method: paymentMethod,
+        efectivo_entregado: paymentMethod === 'efectivo' ? parseFloat(efectivoEntregado) : undefined,
+      })
 
-    if (ticket) {
-      // Release only the current seated reservation (not all - table could be doblada)
+      if (!ticket) {
+        setChargeError('No se pudo registrar el cobro. Vuelve a intentarlo.')
+        setProcessing(false)
+        return
+      }
+
+      // Release only the current seated reservation (not all — table could be doblada)
       await releaseTableAfterPayment(tableId)
       window.location.href = '/mapa'
+    } catch (e) {
+      console.error('[handleCobrar]', e)
+      setChargeError('Sin conexión o error del servidor. El cobro NO se ha registrado. Reintenta cuando recuperes la red.')
+      setProcessing(false)
     }
-    setProcessing(false)
   }
 
   // Check if can cobrar
@@ -230,6 +248,25 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <SessionWatcher />
+
+      {/* Charge error banner — persistent, top of screen.
+          Critical: payment confirmation must NEVER be falsely positive.
+          If the network was flaky during cobro, the camarero needs to
+          see this and retry, not assume the customer paid. */}
+      {chargeError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md bg-destructive text-destructive-foreground px-4 py-3 rounded-lg shadow-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm font-medium">{chargeError}</div>
+          <button
+            onClick={() => setChargeError(null)}
+            className="flex-shrink-0 hover:opacity-80"
+            aria-label="Cerrar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex-shrink-0 border-b bg-background sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 h-14">

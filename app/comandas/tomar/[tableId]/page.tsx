@@ -4,7 +4,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown } from 'lucide-react'
+import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SessionWatcher } from '@/components/session-watcher'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -50,6 +50,10 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
   
   const [tableName, setTableName] = useState('')
   const [showToast, setShowToast] = useState(false)
+  // Persistent error banner if "enviar a cocina" fails (network down, server error...).
+  // We do NOT auto-dismiss this — the user has to see it and retry, because
+  // assuming a comanda was sent when it wasn't is the worst-case bug in service.
+  const [sendError, setSendError] = useState<string | null>(null)
   const [order, setOrder] = useState<Order | null>(null)
   const [menu, setMenu] = useState<MenuCategory[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -247,25 +251,47 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
 const handleSendToKitchen = async () => {
   if (!order || pendingItems.length === 0) return
   setSending(true)
-  
-  // Set urgente flag if selected
-  if (isUrgente) {
-    await setOrderUrgente(order.id, true)
+  setSendError(null)
+
+  // Critical path: do NOT show the success toast or navigate until we have
+  // confirmation from the server that the comanda was accepted. If the
+  // network is flaky (typical in restaurant gardens / far tables) or the
+  // server returns success:false, the items stay 'pending' on screen and
+  // the camarero can retry. Better to look like the button is sticky than
+  // to lose a pedido silently.
+  try {
+    if (isUrgente) {
+      await setOrderUrgente(order.id, true)
+    }
+
+    const result = await sendToKitchen(order.id)
+
+    if (!result.success) {
+      // Server reachable but it told us something went wrong (e.g. printer
+      // queue insert failed). Items are still pending in DB — retry is safe.
+      setSendError('No se pudo enviar a cocina. Vuelve a intentarlo.')
+      setSending(false)
+      return
+    }
+
+    // Confirmed accepted — refresh state from DB, success toast, navigate.
+    const updated = await getOrCreateOrder(tableId)
+    setOrder(updated)
+    setSending(false)
+    setSheetOpen(false)
+    setShowToast(true)
+    setTimeout(() => {
+      router.push('/mapa')
+    }, 1000)
+  } catch (e) {
+    // Network error, timeout, server 5xx, etc. The action either never
+    // reached the server, or we don't know its outcome. Stay on screen
+    // with the pending items visible so the camarero can retry once the
+    // connection comes back. Do NOT navigate.
+    console.error('[sendToKitchen]', e)
+    setSendError('Sin conexión o error del servidor. La comanda NO se ha enviado. Reintenta cuando recuperes la red.')
+    setSending(false)
   }
-  
-  // Send to kitchen — print daemon will pick up the print job from Supabase
-  // and physically print on the kitchen/bar printers via ESC/POS.
-  await sendToKitchen(order.id)
-  const updated = await getOrCreateOrder(tableId)
-  setOrder(updated)
-  setSending(false)
-  setSheetOpen(false)
-  
-  // Show toast and navigate
-  setShowToast(true)
-  setTimeout(() => {
-    router.push('/mapa')
-  }, 1000)
 }
 
   const handleCancelItem = async (itemId: string) => {
@@ -1018,6 +1044,24 @@ const handleSendToKitchen = async () => {
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
           <Check className="h-5 w-5" />
           <span className="font-medium">Pedido enviado</span>
+        </div>
+      )}
+
+      {/* Send error banner — persistent until user dismisses or retries.
+          Critical for network-flaky locations (e.g. garden tables): if the
+          comanda didn't make it to the server, we MUST make that visible
+          instead of pretending success. */}
+      {sendError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md bg-destructive text-destructive-foreground px-4 py-3 rounded-lg shadow-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm font-medium">{sendError}</div>
+          <button
+            onClick={() => setSendError(null)}
+            className="flex-shrink-0 hover:opacity-80"
+            aria-label="Cerrar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
