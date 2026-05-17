@@ -101,39 +101,40 @@ export function PassColumn() {
   const isHidden = HIDDEN_ON_PATHS.some(p => pathname?.startsWith(p))
   if (isHidden) return null
 
-  // Estado contraído: solo el handle vertical, no ocupa casi nada.
-  // El botón pequeñito permite reabrir. Posición fija a la derecha
-  // para que no afecte al flujo de las pantallas que está cubriendo.
+  // Estado contraído: una columna estrecha (32px) con el handle
+  // vertical para reabrir. Está en el flujo flex del layout
+  // padre — empuja el contenido a la izquierda esos 32px. Cuando
+  // se expande pasa a 224px. Sin overlay: la columna ocupa espacio
+  // real, no flota encima.
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-emerald-700 hover:bg-emerald-800 text-white px-1 py-3 rounded-l-md shadow-lg flex flex-col items-center gap-1"
-        title="Mostrar columna 'En barra'"
-        aria-label="Mostrar columna en barra"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        <span
-          className="text-[10px] font-semibold tracking-wider"
-          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+      <aside className="flex-shrink-0 w-8 border-l border-emerald-800 bg-emerald-900 flex flex-col">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-2 hover:bg-emerald-800 text-emerald-200 hover:text-white transition-colors"
+          title="Mostrar columna 'En barra'"
+          aria-label="Mostrar columna en barra"
         >
-          EN BARRA
-        </span>
-        {items.length > 0 && (
-          <span className="bg-white text-emerald-700 text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
-            {items.length}
+          <ChevronLeft className="h-4 w-4" />
+          <span
+            className="text-[10px] font-semibold tracking-wider whitespace-nowrap"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            EN BARRA
           </span>
-        )}
-      </button>
+          {items.length > 0 && (
+            <span className="bg-emerald-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">
+              {items.length}
+            </span>
+          )}
+        </button>
+      </aside>
     )
   }
 
   return (
-    <aside
-      className="fixed right-0 top-0 bottom-0 z-30 w-56 bg-emerald-950 text-white border-l border-emerald-800 flex flex-col"
-      style={{ boxShadow: '-12px 0 24px -8px rgba(0,0,0,0.4)' }}
-    >
+    <aside className="flex-shrink-0 w-56 bg-emerald-950 text-white border-l border-emerald-800 flex flex-col">
       {/* Header con título y botón cerrar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-emerald-800 flex-shrink-0">
         <div className="flex items-center gap-2">
