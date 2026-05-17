@@ -70,14 +70,31 @@ type UndoAction =
 
 const UNDO_STACK_LIMIT = 5
 
+// Tipos importados de actions (incluye OrdenServicio inline via KdsItem.order).
+type OrdenServicio = 'sin_orden' | 'todo_junto' | 'por_rondas' | 'uno_a_uno'
+
 interface OrderGroup {
   orderId: string
   tableLabel: string
   comensales: number
   notaMesa: string | null
   urgente: boolean
+  ordenServicio: OrdenServicio
+  rondas: string[][] | null
   items: KdsItem[]
   earliestSentAt: Date | null
+}
+
+// Para un order_item.id, calcula a qué ronda pertenece (1-based).
+// Devuelve null si la mesa no tiene rondas configuradas o el item no
+// está en ninguna. La lista de rondas viene como string[][] donde
+// cada subarray es una ronda de item ids.
+function getItemRound(itemId: string, rondas: string[][] | null): number | null {
+  if (!rondas || rondas.length === 0) return null
+  for (let i = 0; i < rondas.length; i++) {
+    if (rondas[i].includes(itemId)) return i + 1
+  }
+  return null
 }
 
 export default function CocinaPage() {
@@ -266,7 +283,18 @@ export default function CocinaPage() {
         comensales: item.order.comensales,
         notaMesa: item.order.nota_mesa,
         urgente: item.order.urgente,
-        items: orderItems,
+        ordenServicio: item.order.orden_servicio,
+        rondas: item.order.rondas,
+        // Si la mesa tiene rondas configuradas, ordenamos los items
+        // por número de ronda (1 antes que 2, etc.). Items sin ronda
+        // asignada van al final. Para por_rondas/uno_a_uno el cocinero
+        // quiere ver ronda 1 arriba y trabajar de arriba abajo.
+        items: orderItems.slice().sort((a, b) => {
+          const ra = getItemRound(a.id, item.order!.rondas) ?? 999
+          const rb = getItemRound(b.id, item.order!.rondas) ?? 999
+          if (ra !== rb) return ra - rb
+          return a.kds_position - b.kds_position
+        }),
         earliestSentAt: sentTimes.length > 0 ? new Date(Math.min(...sentTimes.map(d => d.getTime()))) : null
       })
     }
@@ -593,18 +621,47 @@ export default function CocinaPage() {
                     group.urgente && "ring-2 ring-red-500"
                   )}
                 >
-                  {/* Order header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl font-bold">{group.tableLabel}</span>
-                      <span className="text-gray-500">· {group.comensales} pax</span>
+                  {/* Order header.
+                      flex-wrap + min-w-0 + gap-y para que cuando el
+                      ancho disponible no permita meter "URGENTE" +
+                      timer + "Mesa lista" todo en una linea, el
+                      bloque derecho (timer + boton) salte a una
+                      segunda linea en lugar de salirse de la card.
+                      Antes pasaba con cards en grid xl:3 cols + label
+                      de mesa largo. */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-shrink">
+                      <span className="text-xl font-bold truncate">{group.tableLabel}</span>
+                      <span className="text-gray-500 whitespace-nowrap">· {group.comensales} pax</span>
                       {group.urgente && (
-                        <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
+                        <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 whitespace-nowrap flex-shrink-0">
                           <Zap className="h-3 w-3" /> URGENTE
                         </span>
                       )}
+                      {/* Modo de servicio. Solo mostramos cuando NO es
+                          sin_orden (que es el default y no aporta info).
+                          - todo_junto: la camarera quiere todo a la vez,
+                            cocinero debe sincronizar.
+                          - por_rondas / uno_a_uno: hay rondas configuradas,
+                            cada item lleva su badge de número de ronda
+                            abajo. */}
+                      {group.ordenServicio === 'todo_junto' && (
+                        <span className="bg-purple-700 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                          Todo junto
+                        </span>
+                      )}
+                      {group.ordenServicio === 'por_rondas' && (
+                        <span className="bg-indigo-700 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                          Por rondas
+                        </span>
+                      )}
+                      {group.ordenServicio === 'uno_a_uno' && (
+                        <span className="bg-indigo-700 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                          Uno a uno
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       {group.earliestSentAt && (
                         <span className={cn(
                           "px-2 py-1 rounded text-sm font-mono",
@@ -631,64 +688,71 @@ export default function CocinaPage() {
                     </div>
                   )}
 
-                  {/* Items list */}
+                  {/* Items list.
+                      Si la mesa tiene rondas (por_rondas / uno_a_uno),
+                      agrupamos los items bajo separadores "RONDA 1",
+                      "RONDA 2"... para que el cocinero sepa el orden
+                      en que la camarera quiere que salgan. Items sin
+                      ronda asignada (raros — items añadidos despues
+                      de configurar el orden) caen en un grupo "Sin
+                      ronda" al final. */}
                   <div className="space-y-2">
-                    {group.items.map(item => {
-                      const elapsed = getElapsedSeconds(item.sent_at)
-                      const inQueue = item.in_prep_queue_at !== null
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => handleToggleInQueue(item)}
-                          className={cn(
-                            "flex items-start justify-between rounded-lg p-3 cursor-pointer transition-colors select-none",
-                            // Estado "en cola": azul claro. El cocinero
-                            // ve de un vistazo qué tiene activo. Tocar
-                            // otra vez la fila lo saca de la cola.
-                            inQueue
-                              ? "bg-sky-900/60 ring-1 ring-sky-500"
-                              : "bg-gray-800 hover:bg-gray-700"
-                          )}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="text-lg font-medium">
-                              <span className="font-bold">{item.quantity}x</span> {item.name}
-                            </div>
-                            {item.modifier_summary && item.modifier_summary.length > 0 && (
-                              <div className="text-sm text-gray-400 mt-1">
-                                {item.modifier_summary.map(m => m.name).join(', ')}
-                              </div>
-                            )}
-                            {item.notes && (
-                              <div className="text-sm text-amber-400 italic mt-1">
-                                {item.notes}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                            <span className={cn(
-                              "px-2 py-1 rounded text-xs font-mono",
-                              getTimerColor(elapsed)
-                            )}>
-                              {formatTime(elapsed)}
+                    {(() => {
+                      const hasRondas =
+                        (group.ordenServicio === 'por_rondas' || group.ordenServicio === 'uno_a_uno')
+                        && group.rondas && group.rondas.length > 0
+
+                      if (!hasRondas) {
+                        return group.items.map(item => (
+                          <ItemRow
+                            key={item.id}
+                            item={item}
+                            elapsed={getElapsedSeconds(item.sent_at)}
+                            timerColor={getTimerColor(getElapsedSeconds(item.sent_at))}
+                            timerLabel={formatTime(getElapsedSeconds(item.sent_at))}
+                            onToggle={() => handleToggleInQueue(item)}
+                            onReady={() => handleMarkReady(item.id)}
+                          />
+                        ))
+                      }
+
+                      // Agrupar items por número de ronda.
+                      const byRound = new Map<number | null, KdsItem[]>()
+                      for (const it of group.items) {
+                        const r = getItemRound(it.id, group.rondas)
+                        if (!byRound.has(r)) byRound.set(r, [])
+                        byRound.get(r)!.push(it)
+                      }
+                      // Render: rondas ordenadas, "sin ronda" al final.
+                      const roundKeys = Array.from(byRound.keys()).sort((a, b) => {
+                        if (a === null) return 1
+                        if (b === null) return -1
+                        return a - b
+                      })
+
+                      return roundKeys.map(roundNum => (
+                        <div key={`round-${roundNum ?? 'none'}`} className="space-y-2">
+                          <div className="flex items-center gap-2 pt-1">
+                            <div className="h-px bg-indigo-800 flex-1" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 whitespace-nowrap">
+                              {roundNum === null ? 'Sin ronda' : `Ronda ${roundNum}`}
                             </span>
-                            <Button
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 h-10 w-20"
-                              // Stop propagation: el "Listo" tiene su
-                              // propia acción y no debe a la vez togglear
-                              // el estado de cola del item.
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleMarkReady(item.id)
-                              }}
-                            >
-                              <Check className="h-4 w-4 mr-1" /> Listo
-                            </Button>
+                            <div className="h-px bg-indigo-800 flex-1" />
                           </div>
+                          {byRound.get(roundNum)!.map(item => (
+                            <ItemRow
+                              key={item.id}
+                              item={item}
+                              elapsed={getElapsedSeconds(item.sent_at)}
+                              timerColor={getTimerColor(getElapsedSeconds(item.sent_at))}
+                              timerLabel={formatTime(getElapsedSeconds(item.sent_at))}
+                              onToggle={() => handleToggleInQueue(item)}
+                              onReady={() => handleMarkReady(item.id)}
+                            />
+                          ))}
                         </div>
-                      )
-                    })}
+                      ))
+                    })()}
                   </div>
                 </div>
               ))}
@@ -821,6 +885,72 @@ function QueueRow({
       >
         <Check className="h-3 w-3" />
       </Button>
+    </div>
+  )
+}
+
+// Una fila de item dentro de la card de comanda. Se extrajo del render
+// inline porque ahora se llama desde dos sitios: agrupado por rondas
+// (cuando hay rondas configuradas) o lista plana (cuando no las hay).
+// Mantiene la misma apariencia y comportamiento del item original.
+function ItemRow({
+  item,
+  elapsed: _elapsed,
+  timerColor,
+  timerLabel,
+  onToggle,
+  onReady,
+}: {
+  item: KdsItem
+  elapsed: number
+  timerColor: string
+  timerLabel: string
+  onToggle: () => void
+  onReady: () => void
+}) {
+  const inQueue = item.in_prep_queue_at !== null
+  return (
+    <div
+      onClick={onToggle}
+      className={cn(
+        "flex items-start justify-between rounded-lg p-3 cursor-pointer transition-colors select-none",
+        inQueue
+          ? "bg-sky-900/60 ring-1 ring-sky-500"
+          : "bg-gray-800 hover:bg-gray-700"
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-lg font-medium">
+          <span className="font-bold">{item.quantity}x</span> {item.name}
+        </div>
+        {item.modifier_summary && item.modifier_summary.length > 0 && (
+          <div className="text-sm text-gray-400 mt-1">
+            {item.modifier_summary.map(m => m.name).join(', ')}
+          </div>
+        )}
+        {item.notes && (
+          <div className="text-sm text-amber-400 italic mt-1">
+            {item.notes}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+        <span className={cn("px-2 py-1 rounded text-xs font-mono", timerColor)}>
+          {timerLabel}
+        </span>
+        <Button
+          size="sm"
+          className="bg-green-600 hover:bg-green-700 h-10 w-20"
+          // Stop propagation: el "Listo" tiene su propia acción y no
+          // debe a la vez togglear el estado de cola del item.
+          onClick={(e) => {
+            e.stopPropagation()
+            onReady()
+          }}
+        >
+          <Check className="h-4 w-4 mr-1" /> Listo
+        </Button>
+      </div>
     </div>
   )
 }

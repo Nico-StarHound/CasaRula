@@ -2,10 +2,20 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eraser } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { getPassItems, markItemPicked, type PassItem } from '@/app/actions/comandas'
+import { getPassItems, markItemPicked, markAllPassItemsPicked, type PassItem } from '@/app/actions/comandas'
 import { cn } from '@/lib/utils'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 // =====================================================================
 // PassColumn — columna lateral derecha "En barra"
@@ -37,6 +47,8 @@ const HIDDEN_ON_PATHS = ['/cocina', '/login']
 export function PassColumn() {
   const pathname = usePathname()
   const [items, setItems] = useState<PassItem[]>([])
+  const [clearOpen, setClearOpen] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [open, setOpen] = useState<boolean>(() => {
     // SSR-safe: en server, default false. En cliente, leemos localStorage.
     // Sin esto, hydration mismatch si el server renderiza una cosa y el
@@ -95,6 +107,21 @@ export function PassColumn() {
     await markItemPicked(itemId)
   }
 
+  // "Limpiar todo": marca como recogidos todos los items del pase a
+  // la vez. Detrás de modal de confirmación porque es destructivo
+  // (no se puede deshacer desde aquí — el item pasa a 'served' y
+  // desaparece del flujo de pase). Caso de uso: cambio de turno o
+  // limpieza al final del servicio.
+  const handleClearAll = async () => {
+    setClearing(true)
+    // Optimistic: vaciamos local. Realtime/refetch repondrá si algo
+    // falla.
+    setItems([])
+    await markAllPassItemsPicked()
+    setClearing(false)
+    setClearOpen(false)
+  }
+
   // Esconder en rutas excluidas. Lo hacemos tras todos los hooks
   // para no romper las reglas de hooks (no se pueden saltar useState/
   // useEffect entre renders).
@@ -135,9 +162,9 @@ export function PassColumn() {
 
   return (
     <aside className="flex-shrink-0 w-56 bg-emerald-950 text-white border-l border-emerald-800 flex flex-col">
-      {/* Header con título y botón cerrar */}
+      {/* Header con título y botones (limpiar + cerrar) */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-emerald-800 flex-shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-emerald-200">
             En barra
           </h2>
@@ -145,15 +172,29 @@ export function PassColumn() {
             {items.length}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="text-emerald-300 hover:text-white"
-          title="Ocultar columna"
-          aria-label="Ocultar columna en barra"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Limpiar todo: solo activo si hay algo. Abre modal de
+              confirmación porque es destructivo. */}
+          <button
+            type="button"
+            onClick={() => setClearOpen(true)}
+            disabled={items.length === 0}
+            className="text-emerald-300 hover:text-white disabled:text-emerald-700 disabled:hover:text-emerald-700"
+            title="Limpiar todo (marcar como recogidos)"
+            aria-label="Limpiar todo"
+          >
+            <Eraser className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-emerald-300 hover:text-white"
+            title="Ocultar columna"
+            aria-label="Ocultar columna en barra"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Lista de items. Cada fila: PLATO: MESA. Tocar = recoger. */}
@@ -189,6 +230,30 @@ export function PassColumn() {
           </ul>
         )}
       </div>
+
+      {/* Modal de confirmación para Limpiar todo. AlertDialog en lugar
+          de Dialog porque es una acción destructiva — necesita un "sí"
+          explícito y no se cierra al click fuera. */}
+      <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Limpiar todo el pase?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se marcarán como recogidos los {items.length} {items.length === 1 ? 'plato' : 'platos'} que están ahora mismo en barra. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearing}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClearAll}
+              disabled={clearing}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {clearing ? 'Limpiando…' : 'Sí, limpiar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   )
 }

@@ -1024,6 +1024,42 @@ export async function markItemPicked(itemId: string): Promise<{ success: boolean
   return { success: true }
 }
 
+// "Limpiar todo" del pase: marca como recogidos TODOS los items que
+// ahora mismo están listos esperando. Lo dispara el botón "Limpiar
+// todo" de la PassColumn, tras un modal de confirmación. Se hace en
+// una sola UPDATE filtrada por estado, no item por item.
+export async function markAllPassItemsPicked(): Promise<{ success: boolean; count: number }> {
+  const restaurantId = await getRestaurantId()
+  if (!restaurantId) return { success: true, count: 0 }
+
+  const supabase = createServiceClient()
+
+  // Necesitamos filtrar por restaurant_id, pero ese campo vive en
+  // orders, no en order_items. Buscamos primero los ids candidatos.
+  const { data: candidates } = await supabase
+    .from('order_items')
+    .select('id, order:orders!inner ( restaurant_id )')
+    .eq('status', 'ready')
+    .is('picked_from_pass_at', null)
+
+  type Row = { id: string; order: { restaurant_id: string } | null }
+  const ids = ((candidates || []) as unknown as Row[])
+    .filter(r => r.order?.restaurant_id === restaurantId)
+    .map(r => r.id)
+
+  if (ids.length === 0) return { success: true, count: 0 }
+
+  await supabase
+    .from('order_items')
+    .update({
+      status: 'served',
+      picked_from_pass_at: new Date().toISOString(),
+    })
+    .in('id', ids)
+
+  return { success: true, count: ids.length }
+}
+
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
   // Marca el item como ready y lo saca de la cola de preparación al
@@ -1187,6 +1223,12 @@ export interface KdsItem {
     nota_mesa: string | null
     urgente: boolean
     comensales: number
+    // Modo y rondas configuradas en la comanda. Permiten al KDS
+    // mostrar a qué ronda pertenece cada item (badge "RONDA 1",
+    // "RONDA 2"...) y al cocinero seguir el orden que pidió la
+    // camarera.
+    orden_servicio: OrdenServicio
+    rondas: string[][] | null
     table: { id: string; label: string } | null
   } | null
 }
@@ -1205,6 +1247,7 @@ export async function getKdsItems(): Promise<KdsItem[]> {
       in_prep_queue_at, prep_queue_position,
       order:orders (
         id, nota_mesa, urgente, comensales,
+        orden_servicio, rondas,
         table:tables ( id, label )
       )
     `)
