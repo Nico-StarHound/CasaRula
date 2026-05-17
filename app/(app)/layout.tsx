@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
-import { redirect } from 'next/navigation'
 import { BottomNav } from '@/components/bottom-nav'
 import { SessionWatcher } from '@/components/session-watcher'
 import { OfflineBanner } from '@/components/offline-banner'
@@ -105,23 +104,12 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  // AUTH CHECK — TEMPORARILY DISABLED
-  // To re-enable: uncomment the block below
-  /*
-  const cookieStore = await cookies()
-  const token = cookieStore.get('session')?.value
-  
-  if (!token) {
-    redirect('/login')
-  }
-  
-  try {
-    await jwtVerify(token, JWT_SECRET)
-  } catch {
-    redirect('/login')
-  }
-  */
-  
+  // Auth check is enforced upstream by middleware.ts (ACCESS_RULES). We
+  // intentionally do NOT re-check the JWT here — duplicating the auth
+  // gate in two places risks them drifting apart over time. If middleware
+  // ever stops matching on this path, the middleware matcher list is the
+  // single source of truth to update.
+
   await ensureRestaurantExists()
 
   // Read the role from the session cookie so the bottom nav shows the

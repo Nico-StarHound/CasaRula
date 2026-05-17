@@ -67,6 +67,14 @@ public class MainActivity extends Activity implements View.OnSystemUiVisibilityC
 
         web.setWebViewClient(new InAppWebViewClient());
 
+        // Force a cache flush on every app launch. The web app is fully
+        // dynamic (sessions, DB state), and stale cached HTML/JS after a
+        // Vercel deploy was causing problems in earlier testing — staff
+        // would see the old build for days. clearCache(true) on launch
+        // is cheap (the assets re-download in ~1s on WiFi) and removes
+        // that whole class of issue.
+        web.clearCache(true);
+
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(this);
 
         setContentView(web);

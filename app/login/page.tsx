@@ -3,7 +3,6 @@ import { jwtVerify } from 'jose'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { PinLogin } from '@/components/pin-login'
-import bcrypt from 'bcryptjs'
 
 export const runtime = 'nodejs'
 
@@ -11,65 +10,7 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'restaurant-reservation-secret-key-change-in-production'
 )
 
-async function ensureSeeded() {
-  const supabase = await createClient()
-  
-  // Check if restaurant exists
-  const { data: restaurants } = await supabase
-    .from('restaurants')
-    .select('id')
-    .limit(1)
-  
-  let restaurantId: string | null = null
-  
-  if (restaurants && restaurants.length > 0) {
-    restaurantId = restaurants[0].id
-  } else {
-    // Create restaurant
-    const { data: restaurant } = await supabase
-      .from('restaurants')
-      .insert({ name: 'Casa Rula' })
-      .select()
-      .single()
-    
-    if (restaurant) {
-      restaurantId = restaurant.id
-      
-      // Create default floor plan
-      await supabase
-        .from('floor_plans')
-        .insert({ 
-          restaurant_id: restaurant.id, 
-          name: 'Planta Principal',
-          is_default: true 
-        })
-    }
-  }
-  
-  if (!restaurantId) return
-  
-  // Check if any staff exist
-  const { data: existingStaff } = await supabase
-    .from('staff')
-    .select('id')
-    .eq('restaurant_id', restaurantId)
-    .limit(1)
-  
-  if (!existingStaff || existingStaff.length === 0) {
-    const pinHash = await bcrypt.hash('1551', 10)
-    await supabase.from('staff').insert({
-      restaurant_id: restaurantId,
-      name: 'Nico',
-      pin_hash: pinHash,
-      role: 'admin',
-    })
-  }
-}
-
 export default async function LoginPage() {
-  // Ensure restaurant and admin user exist
-  await ensureSeeded()
-  
   // If already authenticated, skip login and go to app
   const cookieStore = await cookies()
   const token = cookieStore.get('session')?.value
@@ -84,7 +25,13 @@ export default async function LoginPage() {
     }
   }
 
-  // Get restaurant name for the login screen
+  // Get restaurant name for the login screen.
+  // NOTE: in earlier development we auto-seeded a restaurant + admin user
+  // (PIN 1551) on the login page so we could iterate fast. That code was
+  // removed before production because it (a) hardcoded a publicly-known
+  // PIN, and (b) recreated state we don't want recreated by accident.
+  // Initial setup is now done by running scripts/001_create_tables.sql
+  // and using the /admin endpoint with a properly chosen admin PIN.
   const supabase = await createClient()
   const { data: restaurant } = await supabase
     .from('restaurants')
