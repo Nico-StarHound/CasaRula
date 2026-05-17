@@ -348,17 +348,19 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
   drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
 
   // ── Tipo de documento: muy visible arriba.
-  // Simplificada: "FACTURA SIMPLIFICADA". Completa: "FACTURA".
-  // El tamaño es suficiente para que el cliente lo identifique de un
-  // vistazo sin tener que leer la letra pequeña.
+  // Texto exigido por art. 6/7 del RD 1619/2012: la factura debe
+  // identificarse explícitamente. Las simplificadas (S) llevan
+  // "FACTURA SIMPLIFICADA" y las completas (F) "FACTURA".
+  // Tamaño grande para que el cliente lo identifique de un vistazo.
   drawText(
     ctx, cursor,
     isCompleta ? 'FACTURA' : 'FACTURA SIMPLIFICADA',
-    { size: 28, bold: true, align: 'center' }
+    { size: 36, bold: true, align: 'center' }
   )
-  space(cursor, 6)
+  space(cursor, 8)
 
   // ── Ticket meta (two-column)
+  // "Número y serie" + "Fecha de expedición" son obligatorios.
   drawRow(ctx, cursor, 'Nº:', payload.numero, { size: 22 })
   drawRow(ctx, cursor, 'Fecha:', fmtTime(payload.printed_at), { size: 22 })
   drawRow(ctx, cursor, 'Mesa:', `${payload.table_label} · ${payload.comensales} pax`, { size: 22 })
@@ -367,8 +369,8 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
   }
 
   // ── Bloque cliente (solo factura completa)
-  // Datos requeridos por la AEAT para que la factura sea válida como
-  // justificante de gasto para el destinatario.
+  // Datos requeridos por art. 6.1.d) RD 1619/2012:
+  // nombre/razón social, NIF y domicilio del destinatario.
   if (payload.cliente) {
     drawHr(ctx, cursor, { dashed: true, marginY: 14 })
     drawText(ctx, cursor, 'CLIENTE', { size: 20, bold: true, align: 'left' })
@@ -382,15 +384,23 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
   drawHr(ctx, cursor, { dashed: true, marginY: 14 })
 
   // ── Items: qty | name | price (3-column manual layout)
+  // "Descripción de las operaciones" — art. 6.1.f) / 7.1.d).
   for (const item of payload.items) {
     drawItemRow(ctx, cursor, item)
   }
 
   drawHr(ctx, cursor, { dashed: true, marginY: 14 })
 
-  // ── Totals
+  // ── Totales con desglose IVA por tipo impositivo.
+  // Para que sea válida como factura (completa o simplificada
+  // cualificada con derecho a deducción), la AEAT exige el tipo
+  // impositivo aplicado y la cuota repercutida desglosada. Hoy todo
+  // va al 10% (hostelería); cuando metamos categorías con IVA 21%
+  // (alcohol, refrescos) habrá que desglosar por base de cada tipo.
+  // De momento línea única "IVA 10%".
   drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
-  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  drawRow(ctx, cursor, 'Tipo IVA', '10%', { size: 22 })
+  drawRow(ctx, cursor, 'Cuota IVA', money(payload.iva), { size: 24 })
   space(cursor, 6)
 
   // TOTAL — inverted band, big
@@ -415,7 +425,16 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
   drawText(ctx, cursor, payload.restaurant.pie_ticket || '¡Gracias por su visita!', {
     size: 22, bold: true, align: 'center',
   })
-  drawText(ctx, cursor, 'IVA 10% incluido', { size: 18, align: 'center' })
+  space(cursor, 4)
+  // Mención legal: el IVA está incluido en los precios (régimen
+  // general de IVA en hostelería al 10%). Si en el futuro el
+  // restaurante pasara a recargo de equivalencia u otro régimen
+  // especial habría que cambiar este texto — se podría hacer un
+  // campo en restaurant_config.
+  drawText(ctx, cursor, 'IVA incluido en los precios', { size: 18, align: 'center' })
+  // Recordatorio para el cliente. Conviene a efectos de defensa
+  // ante incidencias y para el régimen sancionador de la AEAT.
+  drawText(ctx, cursor, 'Conserve este documento', { size: 16, align: 'center' })
   space(cursor, 30)
 
   const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
@@ -515,10 +534,25 @@ export function renderCuentaProvisional(payload: CuentaProvisionalPayload): ESCP
   const cursor: CursorState = { y: 28 }
 
   // ── Header
-  drawText(ctx, cursor, 'CUENTA', { size: 56, bold: true, align: 'center' })
-  space(cursor, 4)
-  drawText(ctx, cursor, '(no es factura)', { size: 20, align: 'center' })
-  drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
+  // "Cuenta provisional" o "Pre-cuenta" — DEBE quedar claro que no es
+  // una factura. Por ley (art. 6/7 RD 1619/2012), un documento que no
+  // sea factura no puede confundirse con una. Por eso ponemos el aviso
+  // arriba en banda invertida — imposible de confundir incluso por un
+  // cliente apresurado, y "no es factura" repetido en pie.
+  const bandH = 70
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold 36px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  ctx.fillText('CUENTA PROVISIONAL', PRINT_WIDTH_PX / 2, cursor.y + 18)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH + 8
+  drawText(ctx, cursor, 'No es factura · Sin validez fiscal', {
+    size: 18, align: 'center',
+  })
+  drawHr(ctx, cursor, { thickness: 2, marginY: 14 })
 
   // ── Meta
   drawRow(ctx, cursor, 'Mesa:', `${payload.table_label} · ${payload.comensales} pax`, { size: 22 })
@@ -533,16 +567,20 @@ export function renderCuentaProvisional(payload: CuentaProvisionalPayload): ESCP
 
   drawHr(ctx, cursor, { dashed: true, marginY: 14 })
 
-  // ── Totals
+  // ── Totals — mismo formato que la factura para que cuadre con lo
+  // que pagarán, pero sin valor fiscal.
   drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
-  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  drawRow(ctx, cursor, 'Tipo IVA', '10%', { size: 22 })
+  drawRow(ctx, cursor, 'Cuota IVA', money(payload.iva), { size: 24 })
   space(cursor, 6)
   drawTotalBand(ctx, cursor, 'TOTAL', money(payload.total))
 
   drawHr(ctx, cursor, { dashed: true, marginY: 18 })
 
-  drawText(ctx, cursor, '* No es factura *', { size: 22, bold: true, align: 'center' })
-  drawText(ctx, cursor, 'Solicítela en caja para el ticket fiscal.', {
+  // Recordatorio inequívoco al final, así también si el cliente solo
+  // mira el pie sabe que esto no le sirve como justificante de gasto.
+  drawText(ctx, cursor, 'ESTE DOCUMENTO NO ES UNA FACTURA', { size: 22, bold: true, align: 'center' })
+  drawText(ctx, cursor, 'Solicítela en caja al hacer el pago.', {
     size: 18, align: 'center',
   })
   space(cursor, 30)
@@ -647,14 +685,21 @@ export function renderRectificativa(payload: RectificativaPayload): ESCPOS {
   drawHr(ctx, cursor, { dashed: true, marginY: 14 })
 
   // ── Totales (negativos)
+  // Mismo desglose IVA que la factura original. Las rectificativas
+  // por anulación total invierten todos los importes a negativo, lo
+  // que contablemente cancela la factura original.
   drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
-  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  drawRow(ctx, cursor, 'Tipo IVA', '10%', { size: 22 })
+  drawRow(ctx, cursor, 'Cuota IVA', money(payload.iva), { size: 24 })
   space(cursor, 6)
   drawTotalBand(ctx, cursor, 'TOTAL', money(payload.total))
   space(cursor, 16)
 
-  // ── Motivo
+  // ── Causa de la rectificación (art. 15 RD 1619/2012)
+  // Texto requerido: las facturas rectificativas deben indicar el
+  // motivo y los datos identificativos de la factura rectificada.
   drawHr(ctx, cursor, { dashed: true, marginY: 12 })
+  drawText(ctx, cursor, 'Tipo: Anulación total', { size: 20, bold: true, align: 'left' })
   drawText(ctx, cursor, 'Motivo:', { size: 22, bold: true, align: 'left' })
   drawWrappedText(ctx, cursor, payload.motivo, { size: 22, align: 'left', paddingX: 24 })
 
