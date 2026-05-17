@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ServiceWorkerRegistration } from '@/components/service-worker-registration'
+import { PassColumn } from '@/components/pass-column'
 import './globals.css'
 
 const _inter = Inter({ subsets: ["latin"] })
@@ -57,6 +58,13 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ServiceWorkerRegistration />
         {children}
+        {/* Columna global "En barra". Vive en root layout para aparecer
+            en todas las rutas autenticadas (mapa, lista, comandas, caja,
+            cuenta, tickets, ajustes, dashboard...). El propio componente
+            se oculta en /cocina y /login. Es fixed: el contenido detrás
+            se empuja vía padding-right en body que el componente aplica
+            cuando se expande. */}
+        <PassColumn />
         <Analytics />
       </body>
     </html>

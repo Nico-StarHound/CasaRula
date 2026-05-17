@@ -955,6 +955,75 @@ export async function restoreItemToKitchen(
   return { success: true }
 }
 
+// =====================================================================
+// Pase / columna "En barra"
+// =====================================================================
+//
+// Items con status='ready' pero todavía no recogidos por el camarero.
+// Vienen ordenados por ready_at descendente (los recién marcados
+// arriba), que es lo que el camarero quiere ver: lo último que ha
+// salido empuja a lo anterior hacia abajo.
+
+export interface PassItem {
+  id: string
+  name: string
+  quantity: number
+  ready_at: string | null
+  table_label: string | null
+}
+
+export async function getPassItems(): Promise<PassItem[]> {
+  const restaurantId = await getRestaurantId()
+  if (!restaurantId) return []
+
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('order_items')
+    .select(`
+      id, name, quantity, ready_at,
+      order:orders!inner (
+        restaurant_id,
+        table:tables ( label )
+      )
+    `)
+    .eq('status', 'ready')
+    .is('picked_from_pass_at', null)
+    .order('ready_at', { ascending: false })
+
+  type Row = {
+    id: string
+    name: string
+    quantity: number
+    ready_at: string | null
+    order: { restaurant_id: string; table: { label: string } | null } | null
+  }
+
+  return ((data || []) as unknown as Row[])
+    .filter(r => r.order?.restaurant_id === restaurantId)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      quantity: r.quantity,
+      ready_at: r.ready_at,
+      table_label: r.order?.table?.label ?? null,
+    }))
+}
+
+// Marca un item como recogido del pase. status -> 'served',
+// picked_from_pass_at = now. Lo dispara el camarero tocando la fila
+// en la columna lateral "En barra".
+export async function markItemPicked(itemId: string): Promise<{ success: boolean }> {
+  const supabase = createServiceClient()
+  await supabase
+    .from('order_items')
+    .update({
+      status: 'served',
+      picked_from_pass_at: new Date().toISOString(),
+    })
+    .eq('id', itemId)
+  return { success: true }
+}
+
 export async function markItemReady(itemId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
   // Marca el item como ready y lo saca de la cola de preparación al
