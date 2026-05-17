@@ -899,30 +899,18 @@ const handleSendToKitchen = async () => {
         )}
         
         {pendingItems.length === 0 && (
-          // When there's nothing pending, the natural next step from this
-          // screen is to manage the cuenta (apply invitations / discounts
-          // / split / print proforma / charge). Going straight to /caja
-          // would skip those gates — and /cuenta is the canonical entry
-          // point now. Saves the round-trip "back to mapa → tap table →
-          // Cuenta".
-          order && order.total > 0 ? (
-            <Button
-              className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
-              size="lg"
-              onClick={() => router.push(`/cuenta/${tableId}`)}
-            >
-              <CreditCard className="h-4 w-4" />
-              Cuenta ({order.total.toFixed(2)}€)
-            </Button>
-          ) : (
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              disabled
-            >
-              Todo enviado
-            </Button>
-          )
+          // Nothing pending to send. We don't show "Cuenta" here anymore
+          // because the sticky button at the top of the screen already
+          // handles that — having it in two places caused mis-taps when
+          // the layout shifted. This bottom slot just shows a disabled
+          // hint that the order is fully sent, which is useful context.
+          <Button
+            className="w-full gap-2"
+            size="lg"
+            disabled
+          >
+            Todo enviado
+          </Button>
         )}
       </div>
     </div>
@@ -977,6 +965,28 @@ const handleSendToKitchen = async () => {
           </div>
         </div>
       </header>
+
+      {/* Sticky top bar with "Cuenta" button.
+          Sits between the header and the menu so the cajera/camarera
+          ALWAYS has it visible at the top. Before, the entry to /cuenta
+          was at the bottom of the screen (replacing or next to the
+          "Enviar" button), which caused mis-taps: when the keyboard or
+          a sheet collapsed and shifted the layout, the bottom button
+          jumped and people tapped it accidentally. Up here it's stable
+          and out of the way of the action buttons below.
+          Hidden when order.total === 0 (mesa nueva sin nada cobrable). */}
+      {order && order.total > 0 && (
+        <div className="flex-shrink-0 border-b bg-background px-4 py-2">
+          <Button
+            className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+            size="sm"
+            onClick={() => router.push(`/cuenta/${tableId}`)}
+          >
+            <CreditCard className="h-4 w-4" />
+            Cuenta · {order.total.toFixed(2)}€
+          </Button>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* Menu section - full width on mobile, left panel on desktop */}

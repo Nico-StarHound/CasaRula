@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Check, ChevronUp, ChevronDown, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -33,16 +33,82 @@ export default function CocinaPage() {
   const [now, setNow] = useState(new Date())
   const [loading, setLoading] = useState(true)
 
+  // Set of orderIds we've already seen in this session. Used to detect
+  // "comanda nueva" and ring a soft chime when a NEW order arrives.
+  // - First render: just records whatever's already on screen, no sound
+  //   (so refreshing the page doesn't blast a chime for every active order).
+  // - After that: any orderId that wasn't in the previous set rings once.
+  // - One ding per ORDER, not per item — five items hitting at once
+  //   from the same table = 1 chime, not 5.
+  const seenOrderIdsRef = useRef<Set<string> | null>(null)
+
+  // Plays a short WebAudio chime. We don't ship an audio file because
+  // browsers can be picky about autoplay and external resources; a
+  // synthesized tone with the Web Audio API works offline and needs no
+  // user gesture once the tab has been interacted with at least once
+  // (which it has — the cook tapped to log in).
+  const playDing = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const ctx = new AudioCtx()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      // Two-tone "ding" — high then slightly lower. ~250ms total.
+      osc.frequency.setValueAtTime(880, ctx.currentTime)
+      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.25)
+      gain.gain.setValueAtTime(0.001, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.3)
+      // Close the context shortly after so we don't leak audio nodes
+      // (we create a fresh one each ding).
+      osc.onended = () => { void ctx.close() }
+    } catch {
+      // Audio context creation can fail (autoplay policy on a tab
+      // that's never been touched). We silently ignore — the cook
+      // will still see the new comanda visually.
+    }
+  }, [])
+
   const fetchItems = useCallback(async () => {
     const [kdsItems, config] = await Promise.all([
       getKdsItems(),
       getRestaurantConfig()
     ])
+
+    // Detect new orderIds vs the previous snapshot.
+    const currentOrderIds = new Set<string>()
+    for (const item of kdsItems) {
+      if (item.order?.id) currentOrderIds.add(item.order.id)
+    }
+    if (seenOrderIdsRef.current === null) {
+      // First load — record baseline, no sound.
+      seenOrderIdsRef.current = currentOrderIds
+    } else {
+      // Any orderId in current that wasn't in the previous snapshot is new.
+      let hasNew = false
+      for (const id of currentOrderIds) {
+        if (!seenOrderIdsRef.current.has(id)) {
+          hasNew = true
+          break
+        }
+      }
+      // We rebuild the set fresh each tick so orders that disappear (all
+      // items marked ready) re-trigger if they come back later — useful
+      // when a comanda was fully served and then the table adds another
+      // round.
+      seenOrderIdsRef.current = currentOrderIds
+      if (hasNew) playDing()
+    }
+
     setItems(kdsItems)
     setWarningMinutes(config?.kds_warning_minutes ?? 10)
     setDangerMinutes(config?.kds_danger_minutes ?? 20)
     setLoading(false)
-  }, [])
+  }, [playDing])
 
   // Initial fetch and realtime subscription
   useEffect(() => {
