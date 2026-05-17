@@ -23,6 +23,7 @@ const ACCESS_RULES: Array<{ prefix: string; allowed: 'any' | string[] }> = [
 
   // Staff (admin, caja, camarero — NOT cocina)
   { prefix: '/comandas',        allowed: ['admin', 'caja', 'camarero'] },
+  { prefix: '/cuenta',          allowed: ['admin', 'caja', 'camarero'] },
   { prefix: '/caja',            allowed: ['admin', 'caja', 'camarero'] },
   { prefix: '/mapa',            allowed: ['admin', 'caja', 'camarero'] },
   { prefix: '/lista',           allowed: ['admin', 'caja', 'camarero'] },
@@ -84,6 +85,7 @@ export const config = {
     '/dashboard/:path*',
     '/tickets/:path*',
     '/comandas/:path*',
+    '/cuenta/:path*',
     '/caja/:path*',
     '/mapa/:path*',
     '/lista/:path*',

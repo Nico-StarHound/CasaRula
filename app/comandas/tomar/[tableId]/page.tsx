@@ -900,19 +900,19 @@ const handleSendToKitchen = async () => {
         
         {pendingItems.length === 0 && (
           // When there's nothing pending, the natural next step from this
-          // screen is to charge the table. Offering it here saves the
-          // waiter the round-trip "back to mapa → tap table → Cobrar".
-          // We only show it if there's something actually to charge; if
-          // the order total is 0 (e.g. all-invitation table) we fall back
-          // to the disabled "Todo enviado" state.
+          // screen is to manage the cuenta (apply invitations / discounts
+          // / split / print proforma / charge). Going straight to /caja
+          // would skip those gates — and /cuenta is the canonical entry
+          // point now. Saves the round-trip "back to mapa → tap table →
+          // Cuenta".
           order && order.total > 0 ? (
             <Button
               className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
               size="lg"
-              onClick={() => router.push(`/caja/${tableId}`)}
+              onClick={() => router.push(`/cuenta/${tableId}`)}
             >
               <CreditCard className="h-4 w-4" />
-              Cobrar ({order.total.toFixed(2)}€)
+              Cuenta ({order.total.toFixed(2)}€)
             </Button>
           ) : (
             <Button

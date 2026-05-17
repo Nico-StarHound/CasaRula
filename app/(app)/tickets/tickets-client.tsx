@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Search, Receipt, Calendar, CreditCard, Banknote, Printer, RotateCcw, RefreshCw, Check, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Search, Receipt, Calendar, CreditCard, Banknote, Printer, RotateCcw, RefreshCw, Check, AlertTriangle, FileText, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TicketPreview } from '@/components/ticket-preview'
-import { getTickets, getTicketsStats, applyRefund, reopenTicket, type Ticket } from '@/app/actions/tickets'
+import { getTickets, getTicketsStats, applyRefund, reopenTicket, reimprimirTicket, rectificarTicket, convertirAFactura, type Ticket } from '@/app/actions/tickets'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +33,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { RestaurantConfig } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -71,6 +80,21 @@ export function TicketsClient({ initialTickets, initialStats, config }: TicketsC
 
   // Reopen state
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false)
+  // Rectificar — modal de motivo. Punto de no retorno fiscal, así que
+  // pedimos motivo escrito y confirmación explícita.
+  const [rectifDialogOpen, setRectifDialogOpen] = useState(false)
+  const [rectifMotivo, setRectifMotivo] = useState('')
+  // Convertir simplificada en completa. Pide datos cliente (NIF,
+  // nombre, dirección) y al confirmar emite R contra la original y F
+  // nueva con esos datos.
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false)
+  const [convertNif, setConvertNif] = useState('')
+  const [convertNombre, setConvertNombre] = useState('')
+  const [convertDireccion, setConvertDireccion] = useState('')
+  const [convertError, setConvertError] = useState<string | null>(null)
+  // Mensajes flash genéricos para acciones (rectifica emitida, etc).
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionInfo, setActionInfo] = useState<string | null>(null)
   const [processingReopen, setProcessingReopen] = useState(false)
 
   const getDateRange = (range: DateRange): { from: string; to: string } => {
@@ -132,10 +156,90 @@ export function TicketsClient({ initialTickets, initialStats, config }: TicketsC
 
   const handlePrint = async () => {
     if (!selectedTicket) return
-    // Placeholder for ESC/POS printing
-    // Would fetch to printer IP stored in printers table
-    console.log('[v0] Print ticket:', selectedTicket.numero)
-    alert('Imprimiendo ticket ' + selectedTicket.numero)
+    setActionError(null)
+    setActionInfo(null)
+    try {
+      const res = await reimprimirTicket(selectedTicket.id)
+      if (!res.success) {
+        setActionError(res.error || 'No se pudo reimprimir el ticket.')
+        return
+      }
+      setActionInfo(`Reimpresión encolada: ${selectedTicket.numero}`)
+    } catch (e) {
+      console.error('[reimprimirTicket]', e)
+      setActionError('Sin conexión o error del servidor.')
+    }
+  }
+
+  // Validación NIF (espejo de la que tenemos en /caja). Si se mete
+  // mal, la AEAT rechazaría la factura, así que la validamos antes
+  // de aceptar.
+  const isValidNif = (nif: string): boolean => {
+    const v = nif.trim().toUpperCase()
+    if (/^\d{8}[A-Z]$/.test(v)) return true
+    if (/^[XYZ]\d{7}[A-Z]$/.test(v)) return true
+    if (/^[ABCDEFGHJKLMNPQRSUVW]\d{7}[\dA-J]$/.test(v)) return true
+    return false
+  }
+
+  const handleConfirmRectificar = async () => {
+    if (!selectedTicket) return
+    if (!rectifMotivo.trim()) {
+      setActionError('Indica el motivo de la rectificativa.')
+      return
+    }
+    setActionError(null)
+    setActionInfo(null)
+    try {
+      const res = await rectificarTicket(selectedTicket.id, rectifMotivo.trim())
+      if (!res.success) {
+        setActionError(res.error || 'No se pudo emitir la rectificativa.')
+        return
+      }
+      setRectifDialogOpen(false)
+      setRectifMotivo('')
+      setActionInfo(`Rectificativa ${res.ticket?.numero} emitida.`)
+      // Refresh local list — the new R needs to appear immediately.
+      const fresh = await getTickets(50, 0)
+      setTickets(fresh)
+    } catch (e) {
+      console.error('[rectificarTicket]', e)
+      setActionError('Sin conexión o error del servidor.')
+    }
+  }
+
+  const handleConfirmConvert = async () => {
+    if (!selectedTicket) return
+    setConvertError(null)
+    if (!convertNif.trim() || !convertNombre.trim() || !convertDireccion.trim()) {
+      setConvertError('Los tres campos son obligatorios.')
+      return
+    }
+    if (!isValidNif(convertNif)) {
+      setConvertError('NIF/CIF/NIE no válido.')
+      return
+    }
+    try {
+      const res = await convertirAFactura(selectedTicket.id, {
+        nif: convertNif.trim().toUpperCase(),
+        nombre: convertNombre.trim(),
+        direccion: convertDireccion.trim(),
+      })
+      if (!res.success) {
+        setConvertError(res.error || 'No se pudo convertir.')
+        return
+      }
+      setConvertDialogOpen(false)
+      setConvertNif('')
+      setConvertNombre('')
+      setConvertDireccion('')
+      setActionInfo(`Emitidas: ${res.rectificativa?.numero} y ${res.completa?.numero}`)
+      const fresh = await getTickets(50, 0)
+      setTickets(fresh)
+    } catch (e) {
+      console.error('[convertirAFactura]', e)
+      setConvertError('Sin conexión o error del servidor.')
+    }
   }
 
   const handleOpenRefund = () => {

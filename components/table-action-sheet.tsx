@@ -31,7 +31,6 @@ import {
   ChevronDown,
   Receipt,
   DoorOpen,
-  Printer,
   CreditCard
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -49,7 +48,7 @@ import {
 import type { Table, TableStatus, Reservation, StaffRole } from '@/lib/types'
 import { updateTable } from '@/app/actions/floor-plan'
 import { updateReservationStatus } from '@/app/actions/reservations'
-import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, setPedidaCuenta, printCuentaProvisional, type Order } from '@/app/actions/comandas'
+import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, type Order } from '@/app/actions/comandas'
 import { cn } from '@/lib/utils'
 
 interface TableActionSheetProps {
@@ -251,7 +250,6 @@ export function TableActionSheet({
   const [showFirstConfirm, setShowFirstConfirm] = useState(false)
   const [showSecondConfirm, setShowSecondConfirm] = useState(false)
   const [releasing, setReleasing] = useState(false)
-  const [printingCuenta, setPrintingCuenta] = useState(false)
 
   // Show "Ver Comanda" for admin, camarero, caja roles
   const canSeeComanda = userRole && ['admin', 'camarero', 'caja'].includes(userRole)
@@ -397,9 +395,14 @@ const handleVerComanda = () => {
     window.location.href = `/comandas/tomar/${table.id}`
   }
 
-  const handleCobrar = () => {
+  // The bottom button on a seated table is now a single "Cuenta" entry
+  // point. Invitations, discounts, split, proforma and the final charge
+  // all happen inside /cuenta/[tableId] (and /caja for the actual fiscal
+  // event). The legacy two-step "Imprimir cuenta" → "Cobrar" UI here is
+  // gone.
+  const handleAbrirCuenta = () => {
     if (!table) return
-    window.location.href = `/caja/${table.id}`
+    window.location.href = `/cuenta/${table.id}`
   }
 
   const generateCuentaHTML = (
@@ -447,23 +450,6 @@ const handleVerComanda = () => {
   <div class="divider"></div>
 </body>
 </html>`
-  }
-
-  const handleImprimirCuenta = async () => {
-    if (!table || !tableOpenOrder) return
-    setPrintingCuenta(true)
-
-    // Enqueue print job — daemon picks it up and prints physically.
-    await printCuentaProvisional(tableOpenOrder.id)
-
-    // Mark cuenta as pedida
-    await setPedidaCuenta(tableOpenOrder.id)
-    
-    // Refresh the order state
-    const updatedOrder = await getOpenOrder(table.id)
-    setTableOpenOrder(updatedOrder)
-    
-    setPrintingCuenta(false)
   }
 
   const handleLiberarMesa = () => {
@@ -594,42 +580,40 @@ const handleVerComanda = () => {
                                 </Button>
                               )}
 
-                              {/* Imprimir cuenta */}
-                              {tableOpenOrder && tableOpenOrder.total > 0 && !tableOpenOrder.cuenta_pedida && (
-                                <Button
-                                  variant="outline"
-                                  className="w-full h-12"
-                                  onClick={handleImprimirCuenta}
-                                  disabled={printingCuenta}
-                                >
-                                  <Printer className="mr-2 h-5 w-5" />
-                                  {printingCuenta ? 'Imprimiendo...' : 'Imprimir cuenta'}
-                                </Button>
-                              )}
-
-                              {/* Cobrar */}
-                              {tableOpenOrder && tableOpenOrder.cuenta_pedida && (
+                              {/* Cuenta — entrada única al flujo de cobro.
+                                  Antes había dos botones encadenados
+                                  ("Imprimir cuenta" → "Cobrar") y la
+                                  visibilidad dependía del flag
+                                  cuenta_pedida, lo que escondía la
+                                  posibilidad de cobrar hasta haber
+                                  imprimido. Ahora un solo botón
+                                  "Cuenta" abre la pantalla nueva donde
+                                  viven invitaciones, descuentos,
+                                  proforma y cobro.
+                                  Mostramos siempre que haya una orden
+                                  abierta (incluso total = 0 — mesa
+                                  totalmente invitada que todavía hay
+                                  que cerrar formalmente). */}
+                              {tableOpenOrder && (
                                 <Button
                                   className="w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white"
-                                  onClick={handleCobrar}
+                                  onClick={handleAbrirCuenta}
                                 >
                                   <CreditCard className="mr-2 h-5 w-5" />
-                                  Cobrar
+                                  Cuenta · {tableOpenOrder.total.toFixed(2)}€
                                 </Button>
                               )}
 
                               {/* Liberar mesa */}
-                              {!(tableOpenOrder && tableOpenOrder.cuenta_pedida) && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={handleLiberarMesa}
-                                >
-                                  <DoorOpen className="mr-2 h-4 w-4" />
-                                  Liberar mesa
-                                </Button>
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={handleLiberarMesa}
+                              >
+                                <DoorOpen className="mr-2 h-4 w-4" />
+                                Liberar mesa
+                              </Button>
                             </>
                           ) : undefined}
                         />

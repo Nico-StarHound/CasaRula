@@ -605,3 +605,101 @@ function parseTicket(t: Record<string, unknown>): Ticket {
     created_at: t.created_at as string,
   }
 }
+
+// =====================================================================
+// REIMPRIMIR — vuelve a encolar un ticket ya emitido
+// =====================================================================
+//
+// Útil cuando el cliente perdió el papel, o cuando hubo un atasco en
+// la térmica y la cajera quiere reintentar. No emite ticket nuevo (no
+// hay coste fiscal), solo encola el mismo payload original al daemon.
+//
+// Se respeta el tipo original: una rectificativa se reimprime como
+// rectificativa, una completa como completa, etc.
+// =====================================================================
+export async function reimprimirTicket(
+  ticketId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = createServiceClient()
+
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .single()
+
+  if (!ticket) return { success: false, error: 'Ticket no encontrado' }
+
+  const restaurantId = ticket.restaurant_id
+  const header = await loadPrintHeader(supabase, restaurantId)
+
+  // Choose the right print kind based on serie.
+  const kind = ticket.serie === 'R' ? 'rectificativa' : 'factura'
+
+  // Build payload from the ticket row (mirror of emitirTicket/rectificar).
+  const items = ticket.items as TicketItem[]
+  const cliente = ticket.cliente_nif
+    ? {
+        nif: ticket.cliente_nif,
+        nombre: ticket.cliente_nombre,
+        direccion: ticket.cliente_direccion,
+      }
+    : null
+
+  let payload: Record<string, unknown>
+  if (ticket.serie === 'R') {
+    // Need the original ticket's numero to label "Rectifica:".
+    const { data: original } = ticket.rectifica_ticket_id
+      ? await supabase
+          .from('tickets')
+          .select('numero')
+          .eq('id', ticket.rectifica_ticket_id)
+          .single()
+      : { data: null }
+    payload = {
+      numero: ticket.numero,
+      original_numero: original?.numero || '?',
+      table_label: ticket.table_label,
+      staff_name: ticket.staff_name,
+      comensales: ticket.comensales,
+      items,
+      subtotal: Number(ticket.subtotal),
+      iva: Number(ticket.iva),
+      total: Number(ticket.total),
+      motivo: ticket.motivo_rectificativa || '',
+      cliente,
+      printed_at: new Date().toISOString(),
+      restaurant: header,
+    }
+  } else {
+    payload = {
+      numero: ticket.numero,
+      serie: ticket.serie,
+      table_label: ticket.table_label,
+      staff_name: ticket.staff_name,
+      comensales: ticket.comensales,
+      items,
+      subtotal: Number(ticket.subtotal),
+      iva: Number(ticket.iva),
+      total: Number(ticket.total),
+      payment_method: ticket.payment_method,
+      efectivo_entregado: ticket.efectivo_entregado != null
+        ? Number(ticket.efectivo_entregado) : null,
+      cambio: ticket.cambio != null ? Number(ticket.cambio) : null,
+      cliente,
+      printed_at: new Date().toISOString(),
+      restaurant: header,
+    }
+  }
+
+  await enqueuePrintJob({
+    restaurantId,
+    kind,
+    printerType: 'caja',
+    orderId: ticket.order_id,
+    ticketId: ticket.id,
+    payload,
+  })
+
+  return { success: true }
+}
