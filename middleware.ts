@@ -16,7 +16,7 @@ const ACCESS_RULES: Array<{ prefix: string; allowed: 'any' | string[] }> = [
   // Admin-only
   { prefix: '/admin',           allowed: ['admin'] },
   { prefix: '/ajustes',         allowed: ['admin'] },
-  { prefix: '/dashboard',       allowed: ['admin'] },
+  { prefix: '/dashboard',       allowed: ['admin', 'caja', 'camarero'] },
 
   // Caja + admin (no analytics, but everything else)
   { prefix: '/tickets',         allowed: ['admin', 'caja', 'camarero'] },
