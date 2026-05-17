@@ -100,44 +100,76 @@ export default function CocinaPage() {
   //   from the same table = 1 chime, not 5.
   const seenOrderIdsRef = useRef<Set<string> | null>(null)
 
-  // Plays a short "PI-PI" two-beep chime. We don't ship an audio file
-  // because browsers can be picky about autoplay and external resources;
-  // a synthesized tone with the Web Audio API works offline and needs no
-  // user gesture once the tab has been interacted with at least once
-  // (which it has — the cook tapped to log in).
+  // Plays a soft two-note chime — like a doorbell or a hotel reception
+  // bell, not a robotic alarm. We don't ship an audio file because
+  // browsers can be picky about autoplay and external resources; a
+  // synthesized chime with Web Audio works offline.
   const playDing = useCallback(() => {
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       const ctx = new AudioCtx()
 
-      // Helper: schedule one beep at offset seconds from now.
-      const beep = (offset: number) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        // Square wave for a sharper "pi" sound (vs sine which is softer)
-        osc.type = 'square'
-        osc.frequency.setValueAtTime(1000, ctx.currentTime + offset)
-        // Volume envelope: quick attack, hold, quick release. Peak 0.5
-        // is loud — square wave hits hard, anything over ~0.6 starts to
-        // sound distorted on cheap tablet speakers.
-        gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset)
-        gain.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + offset + 0.01)
-        gain.gain.setValueAtTime(0.5, ctx.currentTime + offset + 0.12)
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.15)
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.start(ctx.currentTime + offset)
-        osc.stop(ctx.currentTime + offset + 0.16)
+      // Master gain con un low-pass filter para quitarle el chirrido
+      // metálico del oscilador puro y darle calidez (más a "campanilla
+      // de hotel" y menos a "alarma de horno").
+      const master = ctx.createGain()
+      master.gain.value = 0.35
+      const lowpass = ctx.createBiquadFilter()
+      lowpass.type = 'lowpass'
+      lowpass.frequency.value = 3000
+      lowpass.Q.value = 0.8
+      master.connect(lowpass)
+      lowpass.connect(ctx.destination)
+
+      // Una "nota" de campanilla: tono base + segundo armónico una
+      // octava arriba para darle brillo. Triangle wave en lugar de
+      // square = mucho más suave, sin armónicos altos chirriantes.
+      // Envelope con attack rápido (10ms) y release largo (600ms)
+      // para que suene como algo que vibra y se apaga, no como un
+      // pitido que se corta seco.
+      const note = (offset: number, baseFreq: number) => {
+        const t = ctx.currentTime + offset
+
+        // Fundamental
+        const o1 = ctx.createOscillator()
+        o1.type = 'triangle'
+        o1.frequency.value = baseFreq
+        // Armónico para brillo de campana
+        const o2 = ctx.createOscillator()
+        o2.type = 'sine'
+        o2.frequency.value = baseFreq * 2
+        const o2gain = ctx.createGain()
+        o2gain.gain.value = 0.3 // armónico al 30% del volumen del fundamental
+
+        // Envelope compartido. Ataque suave (10ms) — sin clic — y
+        // release exponencial de 600ms simulando la resonancia
+        // natural de una campana.
+        const env = ctx.createGain()
+        env.gain.setValueAtTime(0.0001, t)
+        env.gain.exponentialRampToValueAtTime(1.0, t + 0.012)
+        env.gain.exponentialRampToValueAtTime(0.0001, t + 0.65)
+
+        o1.connect(env)
+        o2.connect(o2gain)
+        o2gain.connect(env)
+        env.connect(master)
+
+        o1.start(t)
+        o2.start(t)
+        o1.stop(t + 0.7)
+        o2.stop(t + 0.7)
       }
 
-      // PI ... PI — two beeps separated by a short gap so they sound
-      // distinctly like an alert and not like one long tone.
-      beep(0)
-      beep(0.22)
+      // Dos notas, intervalo de tercera mayor descendente:
+      //   Do alto (C6 = 1046.5 Hz) → Mi alto (E5 = 659.25 Hz)
+      // Suena a "ding-dong" agradable estilo recepción de hotel.
+      // Las notas se solapan: la segunda entra antes de que la
+      // primera termine, lo que da continuidad.
+      note(0, 1046.5)
+      note(0.25, 659.25)
 
-      // Close the context after both beeps have finished so we don't
-      // leak audio nodes (a fresh ctx is created on each call).
-      setTimeout(() => { void ctx.close() }, 600)
+      // Cerramos el contexto cuando ya no suene nada.
+      setTimeout(() => { void ctx.close() }, 1100)
     } catch {
       // Audio context creation can fail (autoplay policy on a tab
       // that's never been touched). We silently ignore — the cook
@@ -541,7 +573,18 @@ export default function CocinaPage() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+            // items-start: cada card mide lo suyo en lugar de estirarse
+            // al alto del item más grande de su fila — antes una card
+            // con 5 items dejaba a su vecino con 1 item con espacio
+            // blanco enorme abajo. Ahora cada card encoge al marcar
+            // items listos.
+            //
+            // grid-flow-dense: las cards rellenan los huecos que dejan
+            // las cards superiores al encoger, en lugar de mantener el
+            // orden estrictamente fila-por-fila. Útil aquí porque el
+            // orden visual (urgente > antiguo) no es crítico — el
+            // cocinero igual mira la card por mesa.
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 items-start grid-flow-dense">
               {orderGroups.map(group => (
                 <div 
                   key={group.orderId} 
