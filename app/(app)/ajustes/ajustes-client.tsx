@@ -76,6 +76,7 @@ import {
   type ModifierGroup,
 } from '@/app/actions/menu'
 import { PrintersSection } from '@/components/printers-section'
+import { AndroidAppCard } from '@/components/android-app-card'
 
 type Section = 'plano' | 'personal' | 'ticket' | 'carta' | 'impresoras' | 'general'
 type CartaTab = 'categorias' | 'platos' | 'modificadores' | 'preview'
@@ -1099,6 +1100,8 @@ export function AjustesClient({
                   </Button>
                 </CardContent>
               </Card>
+
+              <AndroidAppCard />
             </div>
           )}
         </main>
