@@ -68,7 +68,7 @@ export function BottomNav({ isOwner = false, userRole }: BottomNavProps) {
   })
 
   return (
-    <nav className="flex-shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
+    <nav className="flex-shrink-0 border-t bg-background pb-[max(env(safe-area-inset-bottom),0.5rem)]">
       <div className="flex items-center justify-around h-14 px-2">
         {visibleItems.map((item) => {
           const isActive = pathname.startsWith(item.href)

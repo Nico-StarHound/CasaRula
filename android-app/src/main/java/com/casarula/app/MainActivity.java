@@ -1,6 +1,8 @@
 package com.casarula.app;
 
 import android.app.Activity;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -18,14 +20,32 @@ public class MainActivity extends Activity implements View.OnSystemUiVisibilityC
         super.onCreate(savedInstanceState);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        // Edge-to-edge: tell the window to draw under the system bars so
-        // the WebView gets the full screen height. Without this the
-        // system nav bar (back/home/recents) reserves space at the bottom
-        // and clips the bottom nav of the app on devices like the Lenovo
-        // Idea Tab Pro.
+
+        // Draw under the system bars (status + nav). Without this our WebView
+        // can't see the safe area, and the CSS env(safe-area-inset-bottom)
+        // returns 0, which means MIUI / HyperOS devices end up with the
+        // system gesture bar overlapping the bottom-nav of the web app.
         getWindow().getDecorView().setSystemUiVisibility(buildImmersiveFlags());
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        // Tell the system we want to extend into the cutout area on
+        // devices that have one. ALWAYS rather than SHORT_EDGES so
+        // landscape orientation also extends.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attrs = getWindow().getAttributes();
+            attrs.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            getWindow().setAttributes(attrs);
+        }
 
         web = new WebView(this);
+        // Critical for safe-area-inset-bottom to actually have a value:
+        // tell the WebView it should NOT fit system windows itself
+        // (otherwise it eats the insets), and let CSS handle the padding
+        // via env(safe-area-inset-*). The web app already uses
+        // `pb-[env(safe-area-inset-bottom)]` on its BottomNav.
+        web.setFitsSystemWindows(false);
+
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -47,11 +67,6 @@ public class MainActivity extends Activity implements View.OnSystemUiVisibilityC
 
         web.setWebViewClient(new InAppWebViewClient());
 
-        // If the user swipes from the edge to reveal the system bars
-        // (which IMMERSIVE_STICKY allows), reapply the immersive flags
-        // as soon as the system hides them again. Implemented as a method
-        // on the Activity itself (rather than an anonymous class) because
-        // d8 chokes on anonymous-listener metadata for some Java 11 builds.
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(this);
 
         setContentView(web);
@@ -69,8 +84,6 @@ public class MainActivity extends Activity implements View.OnSystemUiVisibilityC
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
-            // Reapply on regaining focus (e.g. after a notification panel
-            // pull-down or returning from a dialog).
             getWindow().getDecorView().setSystemUiVisibility(buildImmersiveFlags());
         }
     }
