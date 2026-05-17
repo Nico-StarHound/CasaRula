@@ -31,8 +31,17 @@ interface ComandaPayload {
   printed_at: string
 }
 
+interface ClienteFiscal {
+  nif: string
+  nombre: string
+  direccion: string
+}
+
 interface FacturaPayload {
   numero: string
+  // 'S' (simplificada) o 'F' (completa). Determina el título impreso
+  // y si se renderiza el bloque de datos de cliente.
+  serie?: 'S' | 'F'
   table_label: string
   staff_name: string | null
   comensales: number
@@ -43,6 +52,7 @@ interface FacturaPayload {
   payment_method: 'efectivo' | 'tarjeta' | 'mixto'
   efectivo_entregado: number | null
   cambio: number | null
+  cliente?: ClienteFiscal | null
   printed_at: string
   restaurant: {
     name: string
@@ -59,6 +69,30 @@ interface AnulacionPayload {
   motivo: string | null
   items: { name: string; quantity: number }[]
   printed_at: string
+}
+
+interface RectificativaPayload {
+  numero: string
+  original_numero: string
+  table_label: string | null
+  staff_name: string | null
+  comensales: number | null
+  // Items con quantity NEGATIVA; price es el original sin negar.
+  items: { name: string; quantity: number; price: number }[]
+  // Importes negativos (subtotal, iva y total son negativos).
+  subtotal: number
+  iva: number
+  total: number
+  motivo: string
+  cliente?: ClienteFiscal | null
+  printed_at: string
+  restaurant: {
+    name: string
+    nif?: string | null
+    direccion?: string | null
+    telefono?: string | null
+    pie_ticket?: string | null
+  }
 }
 
 interface CuentaProvisionalPayload {
@@ -283,6 +317,7 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
   const approxHeight =
     280 + // header (name, NIF, dirección, tel)
     180 + // ticket meta
+    (payload.cliente ? 160 : 0) + // cliente block (only for completa)
     itemCount * 42 + // items
     260 + // totals + TOTAL band + payment
     180 + // footer
@@ -290,6 +325,8 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
 
   const { canvas, ctx } = createTicketCanvas(approxHeight)
   const cursor: CursorState = { y: 28 }
+
+  const isCompleta = payload.serie === 'F'
 
   // ── Header
   drawText(ctx, cursor, payload.restaurant.name, { size: 56, bold: true, align: 'center' })
@@ -310,12 +347,36 @@ export function renderFactura(payload: FacturaPayload): ESCPOS {
 
   drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
 
+  // ── Tipo de documento: muy visible arriba.
+  // Simplificada: "FACTURA SIMPLIFICADA". Completa: "FACTURA".
+  // El tamaño es suficiente para que el cliente lo identifique de un
+  // vistazo sin tener que leer la letra pequeña.
+  drawText(
+    ctx, cursor,
+    isCompleta ? 'FACTURA' : 'FACTURA SIMPLIFICADA',
+    { size: 28, bold: true, align: 'center' }
+  )
+  space(cursor, 6)
+
   // ── Ticket meta (two-column)
-  drawRow(ctx, cursor, 'Ticket:', payload.numero, { size: 22 })
+  drawRow(ctx, cursor, 'Nº:', payload.numero, { size: 22 })
   drawRow(ctx, cursor, 'Fecha:', fmtTime(payload.printed_at), { size: 22 })
   drawRow(ctx, cursor, 'Mesa:', `${payload.table_label} · ${payload.comensales} pax`, { size: 22 })
   if (payload.staff_name) {
     drawRow(ctx, cursor, 'Atiende:', payload.staff_name, { size: 22 })
+  }
+
+  // ── Bloque cliente (solo factura completa)
+  // Datos requeridos por la AEAT para que la factura sea válida como
+  // justificante de gasto para el destinatario.
+  if (payload.cliente) {
+    drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+    drawText(ctx, cursor, 'CLIENTE', { size: 20, bold: true, align: 'left' })
+    drawRow(ctx, cursor, 'NIF:', payload.cliente.nif, { size: 22 })
+    drawRow(ctx, cursor, 'Nombre:', payload.cliente.nombre, { size: 22 })
+    drawWrappedText(ctx, cursor, payload.cliente.direccion, {
+      size: 20, align: 'left', paddingX: 24,
+    })
   }
 
   drawHr(ctx, cursor, { dashed: true, marginY: 14 })
@@ -482,6 +543,126 @@ export function renderCuentaProvisional(payload: CuentaProvisionalPayload): ESCP
 
   drawText(ctx, cursor, '* No es factura *', { size: 22, bold: true, align: 'center' })
   drawText(ctx, cursor, 'Solicítela en caja para el ticket fiscal.', {
+    size: 18, align: 'center',
+  })
+  space(cursor, 30)
+
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
+  const e = new ESCPOS()
+  e.init()
+  e.rasterImageEscStar(bitmap, width, height)
+  e.feed(2).cut()
+  return e
+}
+
+// =====================================================================
+// Factura rectificativa
+// =====================================================================
+//
+// Anula al 100% un ticket anterior. Importes y cantidades negativos.
+// El header lleva una banda roja/invertida "RECTIFICATIVA" para que
+// sea inconfundible, y referencia al número original.
+//
+// Se rige por las mismas reglas fiscales que la simplificada/completa
+// para la AEAT, así que repetimos el bloque de datos del restaurante
+// y, si el original era completa, los datos del cliente.
+// =====================================================================
+export function renderRectificativa(payload: RectificativaPayload): ESCPOS {
+  const itemCount = payload.items.length
+  const approxHeight =
+    280 + // header restaurante
+    140 + // banda RECTIFICATIVA
+    220 + // meta + referencia al original
+    (payload.cliente ? 160 : 0) +
+    itemCount * 42 +
+    260 + // totales + TOTAL band negativo
+    220 + // motivo + footer
+    160
+
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 28 }
+
+  // ── Header restaurante (igual que factura)
+  drawText(ctx, cursor, payload.restaurant.name, { size: 56, bold: true, align: 'center' })
+  space(cursor, 4)
+  if (payload.restaurant.nif) {
+    drawText(ctx, cursor, `NIF: ${payload.restaurant.nif}`, { size: 20, align: 'center' })
+  }
+  if (payload.restaurant.direccion) {
+    drawWrappedText(ctx, cursor, payload.restaurant.direccion, {
+      size: 20, align: 'center', paddingX: 24,
+    })
+  }
+  drawHr(ctx, cursor, { thickness: 2, marginY: 14 })
+
+  // ── Banda RECTIFICATIVA invertida — el cliente tiene que ver al
+  // segundo qué documento tiene en la mano.
+  const bandH = 80
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold 44px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  ctx.fillText('FACTURA RECTIFICATIVA', PRINT_WIDTH_PX / 2, cursor.y + 18)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH + 14
+
+  // ── Meta + referencia al original
+  drawRow(ctx, cursor, 'Nº:', payload.numero, { size: 22 })
+  drawRow(ctx, cursor, 'Fecha:', fmtTime(payload.printed_at), { size: 22 })
+  drawRow(ctx, cursor, 'Rectifica:', payload.original_numero, { size: 22 })
+  if (payload.table_label) {
+    drawRow(ctx, cursor, 'Mesa:', payload.table_label, { size: 22 })
+  }
+
+  // ── Cliente si lo había (original era completa)
+  if (payload.cliente) {
+    drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+    drawText(ctx, cursor, 'CLIENTE', { size: 20, bold: true, align: 'left' })
+    drawRow(ctx, cursor, 'NIF:', payload.cliente.nif, { size: 22 })
+    drawRow(ctx, cursor, 'Nombre:', payload.cliente.nombre, { size: 22 })
+    drawWrappedText(ctx, cursor, payload.cliente.direccion, {
+      size: 20, align: 'left', paddingX: 24,
+    })
+  }
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+
+  // ── Items con cantidades negativas. Reutilizamos drawItemRow pero
+  // pasando price negativo para que el total de línea salga negativo
+  // y se vea claramente que es una devolución contable.
+  for (const item of payload.items) {
+    drawItemRow(ctx, cursor, {
+      name: item.name,
+      // quantity ya viene negativa, pero le ponemos un Math.abs para
+      // que el "Nx" se lea bien, y dejamos el signo en el precio
+      // total de línea (que es quantity*price, negativo).
+      quantity: Math.abs(item.quantity),
+      price: -Math.abs(item.price),
+    })
+  }
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+
+  // ── Totales (negativos)
+  drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
+  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  space(cursor, 6)
+  drawTotalBand(ctx, cursor, 'TOTAL', money(payload.total))
+  space(cursor, 16)
+
+  // ── Motivo
+  drawHr(ctx, cursor, { dashed: true, marginY: 12 })
+  drawText(ctx, cursor, 'Motivo:', { size: 22, bold: true, align: 'left' })
+  drawWrappedText(ctx, cursor, payload.motivo, { size: 22, align: 'left', paddingX: 24 })
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 18 })
+  drawText(ctx, cursor, 'Este documento anula la factura', {
+    size: 18, align: 'center',
+  })
+  drawText(ctx, cursor, `nº ${payload.original_numero}.`, {
     size: 18, align: 'center',
   })
   space(cursor, 30)

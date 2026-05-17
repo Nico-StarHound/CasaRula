@@ -10,6 +10,7 @@ export type PrintJobKind =
   | 'comanda_barra'
   | 'anulacion'
   | 'factura'
+  | 'rectificativa'
   | 'cuenta_provisional'
   | 'test'
 
