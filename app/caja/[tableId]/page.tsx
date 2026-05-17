@@ -73,6 +73,16 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
   const [splitSheetOpen, setSplitSheetOpen] = useState(false)
   const [splitCount, setSplitCount] = useState(2)
   const [splitPaid, setSplitPaid] = useState<boolean[]>([])
+  // Split mode toggle. 'equal' is the legacy "Nx personas / total / N"
+  // logic that was already here. 'byItem' is the new flow where every
+  // item is assigned to one person (or left as "Compartido") and we
+  // compute a per-person subtotal. Stored as state so the staff can
+  // flip between them without losing what they entered.
+  const [splitMode, setSplitMode] = useState<'equal' | 'byItem'>('equal')
+  // itemId -> personaIdx (1-based). Items not in this map are
+  // "shared" and split equally between everyone. We key by item.id
+  // (database row id), which is stable for the lifetime of the order.
+  const [itemAssignment, setItemAssignment] = useState<Record<string, number>>({})
 
   useEffect(() => {
     async function load() {
@@ -122,6 +132,43 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
     : 0
 
   const splitAmount = total / splitCount
+
+  // Compute per-person totals for the by-item split.
+  // Rules:
+  //   - Each charged item belongs either to a specific person (entry in
+  //     itemAssignment) or to "shared".
+  //   - Invitation items are free for everyone; we skip them.
+  //   - Shared items are split evenly across the personas.
+  //   - We pro-rate discount and IVA proportionally to each person's
+  //     gross subtotal so the sum exactly matches `total`.
+  // Returns an array of per-person totals (length = splitCount).
+  function computeByItemTotals(): number[] {
+    if (subtotalBruto <= 0) return Array(splitCount).fill(0)
+
+    const personGross = Array(splitCount).fill(0)
+    let sharedGross = 0
+
+    for (const item of items) {
+      if (item.es_invitacion) continue
+      const lineTotal = item.price * item.quantity
+      const assigned = itemAssignment[item.id]
+      if (assigned && assigned >= 1 && assigned <= splitCount) {
+        personGross[assigned - 1] += lineTotal
+      } else {
+        sharedGross += lineTotal
+      }
+    }
+    const sharedPerPerson = sharedGross / splitCount
+    for (let i = 0; i < splitCount; i++) personGross[i] += sharedPerPerson
+
+    // Pro-rate discount + IVA. ratio = (subtotal+iva)/subtotalBruto = total/subtotalBruto.
+    const ratio = total / subtotalBruto
+    return personGross.map(g => g * ratio)
+  }
+
+  const byItemTotals = splitMode === 'byItem' ? computeByItemTotals() : []
+  // Sum to double-check we match `total` (rounding-safe).
+  const byItemSum = byItemTotals.reduce((s, n) => s + n, 0)
 
   // Handle discount
   const handleApplyDiscount = async () => {
@@ -605,64 +652,183 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
                 Dividir cuenta
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-auto">
+            <SheetContent side="bottom" className="h-auto max-h-[85vh] overflow-y-auto">
               <SheetHeader>
                 <SheetTitle>Dividir cuenta</SheetTitle>
-                <SheetDescription>Entre cuantas personas?</SheetDescription>
+                <SheetDescription>Elige modo y número de personas</SheetDescription>
               </SheetHeader>
-              <div className="space-y-4 py-4">
-                <div className="flex items-center justify-center gap-4">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setSplitCount(Math.max(2, splitCount - 1))}
-                    disabled={splitCount <= 2}
-                  >
-                    -
-                  </Button>
-                  <span className="text-4xl font-bold w-16 text-center">{splitCount}</span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => {
-                      setSplitCount(Math.min(10, splitCount + 1))
-                      setSplitPaid([])
-                    }}
-                    disabled={splitCount >= 10}
-                  >
-                    +
-                  </Button>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Cada persona paga</p>
-                  <p className="text-2xl font-bold">{splitAmount.toFixed(2)}€</p>
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {Array.from({ length: splitCount }).map((_, i) => (
-                    <Button
-                      key={i}
-                      variant={splitPaid[i] ? 'default' : 'outline'}
-                      className={cn(
-                        "h-16 flex-col",
-                        splitPaid[i] && "bg-green-500 hover:bg-green-600"
-                      )}
-                      onClick={() => {
-                        const newPaid = [...splitPaid]
-                        newPaid[i] = !newPaid[i]
-                        setSplitPaid(newPaid)
-                      }}
-                    >
-                      <span className="text-lg">{i + 1}</span>
-                      {splitPaid[i] && <Check className="h-4 w-4" />}
-                    </Button>
-                  ))}
-                </div>
-                {allSplitPaid && (
-                  <p className="text-center text-green-600 font-medium">
-                    Todos han pagado
-                  </p>
-                )}
+
+              {/* Mode toggle. Equal = legacy total / N. ByItem = each item
+                  assigned to one person; shared items split among all. */}
+              <div className="flex gap-2 mt-4 mb-4">
+                <Button
+                  type="button"
+                  variant={splitMode === 'equal' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setSplitMode('equal')}
+                >
+                  Equitativo
+                </Button>
+                <Button
+                  type="button"
+                  variant={splitMode === 'byItem' ? 'default' : 'outline'}
+                  className="flex-1"
+                  onClick={() => setSplitMode('byItem')}
+                >
+                  Por items
+                </Button>
               </div>
+
+              {/* Persona count selector — shared across both modes */}
+              <div className="flex items-center justify-center gap-4 mb-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    setSplitCount(Math.max(2, splitCount - 1))
+                    setSplitPaid([])
+                  }}
+                  disabled={splitCount <= 2}
+                >
+                  -
+                </Button>
+                <span className="text-4xl font-bold w-16 text-center">{splitCount}</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    setSplitCount(Math.min(10, splitCount + 1))
+                    setSplitPaid([])
+                  }}
+                  disabled={splitCount >= 10}
+                >
+                  +
+                </Button>
+              </div>
+
+              {splitMode === 'equal' ? (
+                <div className="space-y-4 pb-4">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">Cada persona paga</p>
+                    <p className="text-2xl font-bold">{splitAmount.toFixed(2)}€</p>
+                  </div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {Array.from({ length: splitCount }).map((_, i) => (
+                      <Button
+                        key={i}
+                        variant={splitPaid[i] ? 'default' : 'outline'}
+                        className={cn(
+                          "h-16 flex-col",
+                          splitPaid[i] && "bg-green-500 hover:bg-green-600"
+                        )}
+                        onClick={() => {
+                          const newPaid = [...splitPaid]
+                          newPaid[i] = !newPaid[i]
+                          setSplitPaid(newPaid)
+                        }}
+                      >
+                        <span className="text-lg">{i + 1}</span>
+                        {splitPaid[i] && <Check className="h-4 w-4" />}
+                      </Button>
+                    ))}
+                  </div>
+                  {allSplitPaid && (
+                    <p className="text-center text-green-600 font-medium">
+                      Todos han pagado
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4 pb-4">
+                  {/* By-item assignment.
+                      Each item shows the persona buttons inline; tapping a
+                      number toggles that item to that person. Tapping the
+                      currently-selected number un-assigns back to "shared".
+                      We render "shared" badge when no assignment so staff
+                      can tell at a glance which items are split. */}
+                  <p className="text-xs text-muted-foreground">
+                    Toca un número para asignar el plato a esa persona.
+                    Los platos sin asignar se reparten entre todos.
+                  </p>
+                  <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                    {items.filter(it => !it.es_invitacion).map(item => {
+                      const assigned = itemAssignment[item.id]
+                      return (
+                        <div key={item.id} className="flex items-center gap-2 border rounded-md p-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {item.quantity}× {item.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {(item.price * item.quantity).toFixed(2)}€
+                              {!assigned && ' · Compartido'}
+                            </div>
+                          </div>
+                          <div className="flex gap-1 flex-wrap">
+                            {Array.from({ length: splitCount }).map((_, i) => {
+                              const personaIdx = i + 1
+                              const isOn = assigned === personaIdx
+                              return (
+                                <button
+                                  key={personaIdx}
+                                  type="button"
+                                  className={cn(
+                                    "h-9 w-9 rounded text-sm font-semibold border transition-colors",
+                                    isOn
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-background hover:bg-muted"
+                                  )}
+                                  onClick={() => {
+                                    setItemAssignment(prev => {
+                                      const next = { ...prev }
+                                      if (isOn) delete next[item.id]
+                                      else next[item.id] = personaIdx
+                                      return next
+                                    })
+                                  }}
+                                >
+                                  {personaIdx}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Per-person totals */}
+                  <div className="border-t pt-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      {byItemTotals.map((t, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "rounded border p-2 flex items-center justify-between",
+                            splitPaid[i] && "bg-green-50 dark:bg-green-950/30 border-green-500"
+                          )}
+                          onClick={() => {
+                            const newPaid = [...splitPaid]
+                            newPaid[i] = !newPaid[i]
+                            setSplitPaid(newPaid)
+                          }}
+                          role="button"
+                        >
+                          <span className="text-sm font-medium">Persona {i + 1}</span>
+                          <span className="flex items-center gap-1">
+                            <span className="font-bold">{t.toFixed(2)}€</span>
+                            {splitPaid[i] && <Check className="h-4 w-4 text-green-600" />}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Suma personas</span>
+                      <span>{byItemSum.toFixed(2)}€ / {total.toFixed(2)}€</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </SheetContent>
           </Sheet>
 
