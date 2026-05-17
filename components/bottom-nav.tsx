@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   { href: '/lista', label: 'Lista', icon: ClipboardList },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/ajustes', label: 'Ajustes', icon: Settings, ownerOnly: true },
-  { href: '/tickets', label: 'Tickets', icon: Receipt, roles: ['admin', 'caja'] },
+  { href: '/tickets', label: 'Tickets', icon: Receipt, roles: ['admin', 'caja', 'camarero'] },
 ]
 
 // Temporary routes for testing
@@ -91,39 +91,45 @@ export function BottomNav({ isOwner = false, userRole }: BottomNavProps) {
           )
         })}
 
-        {/* Temporary Routes Drawer */}
-        <Sheet open={routesOpen} onOpenChange={setRoutesOpen}>
-          <SheetTrigger asChild>
-            <button
-              className="flex flex-col items-center justify-center flex-1 h-full gap-1 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Map className="h-5 w-5" />
-              <span className="text-xs font-medium">Rutas</span>
-            </button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="pb-[env(safe-area-inset-bottom)]">
-            <SheetHeader>
-              <SheetTitle>Rutas de Prueba</SheetTitle>
-              <SheetDescription>Navegar a cualquier ruta de la app</SheetDescription>
-            </SheetHeader>
-            <div className="mt-4 divide-y">
-              {testRoutes.map((route) => (
-                <Link
-                  key={route.href}
-                  href={route.href}
-                  onClick={() => setRoutesOpen(false)}
-                  className="flex items-center justify-between py-3 px-1 hover:bg-muted/50 transition-colors"
-                >
-                  <span className="font-medium">{route.label}</span>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <span className="text-xs">{route.href}</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
+        {/* Temporary Routes Drawer — admin-only.
+            Lets the admin jump to any internal route during development /
+            debugging. Hidden from regular roles (camarero, caja, cocina,
+            reservas) so they don't accidentally land on /admin or other
+            screens not meant for them. */}
+        {isOwner && (
+          <Sheet open={routesOpen} onOpenChange={setRoutesOpen}>
+            <SheetTrigger asChild>
+              <button
+                className="flex flex-col items-center justify-center flex-1 h-full gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Map className="h-5 w-5" />
+                <span className="text-xs font-medium">Rutas</span>
+              </button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="pb-[env(safe-area-inset-bottom)]">
+              <SheetHeader>
+                <SheetTitle>Rutas de Prueba</SheetTitle>
+                <SheetDescription>Navegar a cualquier ruta de la app</SheetDescription>
+              </SheetHeader>
+              <div className="mt-4 divide-y">
+                {testRoutes.map((route) => (
+                  <Link
+                    key={route.href}
+                    href={route.href}
+                    onClick={() => setRoutesOpen(false)}
+                    className="flex items-center justify-between py-3 px-1 hover:bg-muted/50 transition-colors"
+                  >
+                    <span className="font-medium">{route.label}</span>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span className="text-xs">{route.href}</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </SheetContent>
+          </Sheet>
+        )}
       </div>
     </nav>
   )
