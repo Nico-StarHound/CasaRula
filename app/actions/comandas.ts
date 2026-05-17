@@ -339,11 +339,26 @@ export async function seatTableWalkIn(
     .maybeSingle()
 
   if (!existingSeated) {
+    // Fetch the table label so a walk-in without a name reads as
+    // "Walk-in mesa J1" instead of the older confusing "Sin nombre".
+    // The label is shown all over the UI (mapa, lista, tickets…), and
+    // "Sin nombre" was making it hard to tell two walk-ins apart at a
+    // glance during service.
+    let walkInLabel = guestName?.trim() || ''
+    if (!walkInLabel) {
+      const { data: tbl } = await supabase
+        .from('tables')
+        .select('label')
+        .eq('id', tableId)
+        .maybeSingle()
+      walkInLabel = tbl?.label ? `Walk-in mesa ${tbl.label}` : 'Walk-in'
+    }
+
     // Create a seated reservation so table shows as occupied
     await supabase.from('reservations').insert({
       restaurant_id: restaurantId,
       table_id: tableId,
-      guest_name: guestName || 'Sin nombre',
+      guest_name: walkInLabel,
       guest_phone: guestPhone || null,
       party_size: comensales,
       date: new Date().toISOString().split('T')[0],

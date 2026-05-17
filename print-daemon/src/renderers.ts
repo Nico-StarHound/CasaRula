@@ -1,6 +1,6 @@
 // Ticket renderers — turn a print_job payload into ESC/POS bytes.
 
-import { ESCPOS, LINE_WIDTH } from './escpos.js'
+import { ESCPOS } from './escpos.js'
 import { createCanvas, type SKRSContext2D, type Canvas } from '@napi-rs/canvas'
 import {
   createTicketCanvas,
@@ -213,37 +213,64 @@ function trimCanvas(src: Canvas, newHeight: number): Canvas {
 }
 
 // =====================================================================
-// Anulación
+// Anulación — rendered as image. Big "ANULACION" header in inverted
+// black band so kitchen sees it across the pass.
 // =====================================================================
 export function renderAnulacion(payload: AnulacionPayload): ESCPOS {
+  // Height budget: header band + meta + 100/item + motivo block + footer
+  const approxHeight =
+    140 + // ANULACION band
+    160 + // mesa + meta
+    payload.items.reduce((s, i) => s + 60, 0) +
+    (payload.motivo ? 140 : 0) +
+    140
+
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 20 }
+
+  // ── ANULACION band (inverted) — impossible to miss from across the kitchen
+  const bandH = 96
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold 56px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  ctx.fillText('ANULACION', PRINT_WIDTH_PX / 2, cursor.y + 18)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH + 18
+
+  // ── Mesa + meta
+  drawText(ctx, cursor, `Mesa ${payload.table_label}`, { size: 42, bold: true, align: 'left' })
+  drawText(ctx, cursor, `${payload.staff_name || '—'}  ·  ${fmtTime(payload.printed_at)}`, {
+    size: 20, align: 'left',
+  })
+  drawHr(ctx, cursor, { thickness: 2, marginY: 14 })
+
+  // ── Items to retire — big and clear, "RETIRAR Nx Item"
+  for (const item of payload.items) {
+    drawText(ctx, cursor, `RETIRAR  ${item.quantity}x  ${item.name.toUpperCase()}`, {
+      size: 32, bold: true, align: 'left',
+    })
+    space(cursor, 4)
+  }
+
+  // ── Motivo (if provided)
+  if (payload.motivo) {
+    space(cursor, 8)
+    drawText(ctx, cursor, 'Motivo:', { size: 22, bold: true, align: 'left' })
+    drawWrappedText(ctx, cursor, payload.motivo, { size: 22, align: 'left', paddingX: 24 })
+  }
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 18 })
+  space(cursor, 30)
+
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
   const e = new ESCPOS()
   e.init()
-
-  e.align('center').bold(true).size(2, 2)
-  e.line('** ANULACION **')
-  e.resetSize().bold(false)
-  e.align('left')
-  e.hr('=')
-
-  e.bold(true).size(2, 1).line(`Mesa ${payload.table_label}`).resetSize().bold(false)
-  e.line(`${payload.staff_name || '—'}  ·  ${fmtTime(payload.printed_at)}`)
-  e.hr('=')
-
-  for (const item of payload.items) {
-    e.bold(true).size(1, 2)
-    e.line(`RETIRAR  ${item.quantity}x  ${item.name}`)
-    e.resetSize().bold(false)
-  }
-
-  if (payload.motivo) {
-    e.newline()
-    e.bold(true).line('Motivo:').bold(false)
-    e.line(payload.motivo)
-  }
-
-  e.hr('-')
+  e.rasterImageEscStar(bitmap, width, height)
   e.feed(2).cut()
-
   return e
 }
 
@@ -409,44 +436,61 @@ function drawTotalBand(ctx: SKRSContext2D, cursor: CursorState, label: string, v
 }
 
 // =====================================================================
-// Cuenta provisional (preview, no payment info)
+// Cuenta provisional — rendered as image. Same look-and-feel as the
+// factura so customers asking "la cuenta" get a clean ticket; only
+// difference is no payment block + "No es factura" disclaimer.
 // =====================================================================
 export function renderCuentaProvisional(payload: CuentaProvisionalPayload): ESCPOS {
-  const e = new ESCPOS()
-  e.init()
+  const itemCount = payload.items.length
+  const approxHeight =
+    150 + // CUENTA header
+    150 + // meta
+    itemCount * 44 + // items
+    220 + // totals + TOTAL band
+    160 + // footer
+    160
 
-  e.align('center').bold(true).size(2, 2)
-  e.line('CUENTA')
-  e.resetSize().bold(false)
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 28 }
 
-  e.align('left').hr('=')
+  // ── Header
+  drawText(ctx, cursor, 'CUENTA', { size: 56, bold: true, align: 'center' })
+  space(cursor, 4)
+  drawText(ctx, cursor, '(no es factura)', { size: 20, align: 'center' })
+  drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
 
-  e.row(`Mesa: ${payload.table_label}`, `${payload.comensales} pax`)
-  e.line(fmtTime(payload.printed_at))
-  e.hr('-')
+  // ── Meta
+  drawRow(ctx, cursor, 'Mesa:', `${payload.table_label} · ${payload.comensales} pax`, { size: 22 })
+  drawRow(ctx, cursor, 'Fecha:', fmtTime(payload.printed_at), { size: 22 })
 
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
+
+  // ── Items (re-uses drawItemRow from the factura section)
   for (const item of payload.items) {
-    const lineTotal = item.price * item.quantity
-    const left = `${item.quantity}x ${item.name}`
-    const right = money(lineTotal)
-    if (left.length + right.length + 1 > LINE_WIDTH) {
-      e.line(left)
-      e.row('', right)
-    } else {
-      e.row(left, right)
-    }
+    drawItemRow(ctx, cursor, item)
   }
 
-  e.hr('-')
-  e.row('Subtotal:', money(payload.subtotal))
-  e.row('IVA (10%):', money(payload.iva))
-  e.bold(true).size(1, 2)
-  e.row('TOTAL:', money(payload.total))
-  e.resetSize().bold(false)
+  drawHr(ctx, cursor, { dashed: true, marginY: 14 })
 
-  e.newline()
-  e.align('center').line('* No es factura *').align('left')
+  // ── Totals
+  drawRow(ctx, cursor, 'Base imponible', money(payload.subtotal), { size: 24 })
+  drawRow(ctx, cursor, 'IVA (10%)', money(payload.iva), { size: 24 })
+  space(cursor, 6)
+  drawTotalBand(ctx, cursor, 'TOTAL', money(payload.total))
 
-  e.feed(3).cut()
+  drawHr(ctx, cursor, { dashed: true, marginY: 18 })
+
+  drawText(ctx, cursor, '* No es factura *', { size: 22, bold: true, align: 'center' })
+  drawText(ctx, cursor, 'Solicítela en caja para el ticket fiscal.', {
+    size: 18, align: 'center',
+  })
+  space(cursor, 30)
+
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
+  const e = new ESCPOS()
+  e.init()
+  e.rasterImageEscStar(bitmap, width, height)
+  e.feed(2).cut()
   return e
 }

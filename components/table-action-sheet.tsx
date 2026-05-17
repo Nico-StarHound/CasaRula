@@ -112,10 +112,14 @@ function ReservationCard({
   const isReserved = reservation.status === 'reserved'
   const isSeated = reservation.status === 'seated'
   
-  // Check if this is a walk-in (no guest_id or generic names)
-  const isWalkIn = !reservation.guest_id || 
-    reservation.guest_name === 'Sin nombre' || 
-    reservation.guest_name === 'Sin reserva'
+  // Check if this is a walk-in (no guest_id or generic names).
+  // Includes the new "Walk-in mesa X" pattern used when a walk-in is
+  // seated without a name; older entries may still say "Sin nombre".
+  const isWalkIn = !reservation.guest_id ||
+    reservation.guest_name === 'Sin nombre' ||
+    reservation.guest_name === 'Sin reserva' ||
+    reservation.guest_name === 'Walk-in' ||
+    reservation.guest_name.startsWith('Walk-in mesa ')
 
   return (
     <div className={cn(

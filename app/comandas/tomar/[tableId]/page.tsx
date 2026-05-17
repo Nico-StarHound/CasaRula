@@ -4,7 +4,7 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Users, Plus, Minus, Send, ShoppingBag, Check, X, StickyNote, Shuffle, ChevronUp, ChevronDown, FileText, Zap, Scissors, ArrowUpDown, AlertTriangle, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SessionWatcher } from '@/components/session-watcher'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -868,13 +868,30 @@ const handleSendToKitchen = async () => {
         )}
         
         {pendingItems.length === 0 && (
-          <Button 
-            className="w-full gap-2" 
-            size="lg"
-            disabled
-          >
-            Todo enviado
-          </Button>
+          // When there's nothing pending, the natural next step from this
+          // screen is to charge the table. Offering it here saves the
+          // waiter the round-trip "back to mapa → tap table → Cobrar".
+          // We only show it if there's something actually to charge; if
+          // the order total is 0 (e.g. all-invitation table) we fall back
+          // to the disabled "Todo enviado" state.
+          order && order.total > 0 ? (
+            <Button
+              className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+              size="lg"
+              onClick={() => router.push(`/caja/${tableId}`)}
+            >
+              <CreditCard className="h-4 w-4" />
+              Cobrar ({order.total.toFixed(2)}€)
+            </Button>
+          ) : (
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              disabled
+            >
+              Todo enviado
+            </Button>
+          )
         )}
       </div>
     </div>
