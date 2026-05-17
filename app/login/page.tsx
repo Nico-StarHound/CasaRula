@@ -10,7 +10,11 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'restaurant-reservation-secret-key-change-in-production'
 )
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>
+}) {
   // If already authenticated, skip login and go to app
   const cookieStore = await cookies()
   const token = cookieStore.get('session')?.value
@@ -24,6 +28,14 @@ export default async function LoginPage() {
       // Token invalid, show login page
     }
   }
+
+  // Translate the optional ?reason= query (set by /api/auth/logout) into
+  // a human-readable banner so the user knows why they're back here.
+  const { reason } = await searchParams
+  const infoMessage =
+    reason === 'idle'
+      ? 'Sesión cerrada por inactividad. Vuelve a introducir tu PIN.'
+      : null
 
   // Get restaurant name for the login screen.
   // NOTE: in earlier development we auto-seeded a restaurant + admin user
@@ -39,5 +51,5 @@ export default async function LoginPage() {
     .limit(1)
     .single()
 
-  return <PinLogin restaurantName={restaurant?.name || 'Casa Rula'} />
+  return <PinLogin restaurantName={restaurant?.name || 'Casa Rula'} infoMessage={infoMessage} />
 }

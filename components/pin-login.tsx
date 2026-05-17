@@ -9,9 +9,13 @@ import { UtensilsCrossed, Delete } from 'lucide-react'
 
 interface PinLoginProps {
   restaurantName: string
+  // Optional info banner shown above the keypad. Used to explain why the
+  // user was bounced back to /login (e.g. idle timeout). Distinct from
+  // the `error` state, which is for failed PIN attempts.
+  infoMessage?: string | null
 }
 
-export function PinLogin({ restaurantName }: PinLoginProps) {
+export function PinLogin({ restaurantName, infoMessage }: PinLoginProps) {
   const router = useRouter()
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +110,15 @@ export function PinLogin({ restaurantName }: PinLoginProps) {
           <CardDescription>Ingresa tu PIN para continuar</CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Info banner — non-error context like 'logged out due to idle'.
+              Shows above the PIN dots so staff understand why they were
+              bounced back to login. */}
+          {infoMessage && (
+            <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-center">
+              {infoMessage}
+            </div>
+          )}
+
           {/* PIN Display */}
           <div className="flex justify-center gap-3 mb-8">
             {[0, 1, 2, 3].map((i) => (

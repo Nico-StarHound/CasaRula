@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 import { BottomNav } from '@/components/bottom-nav'
 import { SessionWatcher } from '@/components/session-watcher'
+import { IdleLogout } from '@/components/idle-logout'
 import { OfflineBanner } from '@/components/offline-banner'
 import { createClient } from '@/lib/supabase/server'
 
@@ -132,6 +133,7 @@ export default async function AppLayout({
   return (
     <div className="h-dvh flex flex-col">
       <SessionWatcher />
+      <IdleLogout role={role} />
       <OfflineBanner />
       <main className="flex-1 overflow-hidden min-h-0">
         {children}
