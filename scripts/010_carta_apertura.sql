@@ -378,7 +378,7 @@ END $$;
 -- =====================================================================
 -- Verificación: contar lo insertado
 -- =====================================================================
-SELECT name AS categoria, COUNT(*) AS num_items
+SELECT mc.name AS categoria, COUNT(mi.id) AS num_items
 FROM menu_categories mc
 LEFT JOIN menu_items mi ON mi.category_id = mc.id
 WHERE mc.restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9'
