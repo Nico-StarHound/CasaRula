@@ -36,6 +36,16 @@ function required(name: string): string {
   return v
 }
 
+import WebSocket from 'ws'
+
+// Supabase Realtime espera el constructor global de WebSocket. Node
+// 20 (que es el que embebe Electron 33) NO trae uno nativo —
+// llegó en Node 22. Sin esto, el daemon crashea al instanciar el
+// cliente con "Node.js 20 detected without native WebSocket support".
+// Polyfill: parchear el global ANTES de crear el cliente. Lo hacemos
+// con un cast no genérico para no enredarse con tipos.
+;(globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket = WebSocket
+
 const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
