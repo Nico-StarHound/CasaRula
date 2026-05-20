@@ -801,51 +801,25 @@ const handleSendToKitchen = async () => {
                       <span>
                         {item.price != null ? `${((item.price ?? 0) * item.quantity).toFixed(2)}€` : 'Consultar'}
                       </span>
-                      {/* Cancel button for in_kitchen items */}
+                      {/* Cancel button for in_kitchen items.
+                          Antes: Popover anidado por item — fallaba en táctil
+                          porque el blur del input cerraba el Popover, y el
+                          tap pasaba a través al precio. Ahora: el botón solo
+                          abre un Sheet unificado (montado al final del JSX),
+                          controlado por cancelItemId. Mucho más fiable en
+                          tablet. */}
                       {item.status === 'in_kitchen' && (
-                        <Popover open={cancelItemId === item.id} onOpenChange={(open) => {
-                          if (open) setCancelItemId(item.id)
-                          else { setCancelItemId(null); setCancelMotivo('') }
-                        }}>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64" align="end">
-                            <div className="space-y-3">
-                              <p className="font-medium text-sm">Cancelar item enviado</p>
-                              <Input
-                                placeholder="Motivo (requerido)"
-                                value={cancelMotivo}
-                                onChange={(e) => setCancelMotivo(e.target.value)}
-                              />
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1"
-                                  onClick={() => { setCancelItemId(null); setCancelMotivo('') }}
-                                >
-                                  No cancelar
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  className="flex-1"
-                                  onClick={() => handleCancelItem(item.id)}
-                                  disabled={!cancelMotivo.trim()}
-                                >
-                                  Cancelar
-                                </Button>
-                              </div>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 text-destructive hover:text-destructive hover:bg-destructive/10 touch-manipulation"
+                          onClick={() => {
+                            setCancelItemId(item.id)
+                            setCancelMotivo('')
+                          }}
+                        >
+                          <X className="h-5 w-5" />
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -1445,6 +1419,74 @@ const handleSendToKitchen = async () => {
           return handleAddCustomItem(data, customModalDest)
         }}
       />
+
+      {/* Sheet de cancelación de item ya enviado a cocina/barra.
+          Único en todo el componente — se controla con cancelItemId
+          (id del item a cancelar, null si está cerrado). Antes había
+          un Popover por item, lo que fallaba en táctil: al tocar el
+          campo de motivo, a veces el Popover detectaba blur y se
+          cerraba, dejando el tap "perdido". Un Sheet único que sube
+          desde abajo es el patrón estándar de la app y se comporta
+          fiable en tablet. */}
+      <Sheet
+        open={cancelItemId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelItemId(null)
+            setCancelMotivo('')
+          }
+        }}
+      >
+        <SheetContent side="bottom" className="h-auto max-h-[90vh]">
+          <SheetHeader className="text-left">
+            <SheetTitle>Cancelar item enviado</SheetTitle>
+            <SheetDescription>
+              {(() => {
+                const it = order?.items.find(i => i.id === cancelItemId)
+                return it
+                  ? `Se imprimirá un aviso de anulación en la impresora correspondiente para ${it.name}.`
+                  : 'Se imprimirá un aviso de anulación en la impresora correspondiente.'
+              })()}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="px-4 py-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Motivo (obligatorio)</label>
+              <Input
+                value={cancelMotivo}
+                onChange={(e) => setCancelMotivo(e.target.value)}
+                placeholder="Ej: cliente cambió de opinión"
+                autoFocus
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="lg"
+                className="flex-1 h-12"
+                onClick={() => {
+                  setCancelItemId(null)
+                  setCancelMotivo('')
+                }}
+              >
+                No cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                size="lg"
+                className="flex-1 h-12"
+                onClick={() => {
+                  if (cancelItemId) handleCancelItem(cancelItemId)
+                }}
+                disabled={!cancelMotivo.trim()}
+              >
+                Cancelar item
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
     </>
   )
