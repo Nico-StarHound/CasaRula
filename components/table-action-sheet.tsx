@@ -250,6 +250,13 @@ export function TableActionSheet({
   const [showFirstConfirm, setShowFirstConfirm] = useState(false)
   const [showSecondConfirm, setShowSecondConfirm] = useState(false)
   const [releasing, setReleasing] = useState(false)
+  // Estado de "reclamando" para deshabilitar el botón mientras la
+  // llamada al server está en vuelo. DEBE vivir aquí arriba con los
+  // otros useState — si se declara más abajo, después del `if (!table)
+  // return null`, React detecta un número diferente de hooks entre
+  // renders (cuando la mesa es null vs cuando no lo es) y crashea
+  // con el error #310.
+  const [reclamando, setReclamando] = useState(false)
 
   // Show "Ver Comanda" for admin, camarero, caja roles
   const canSeeComanda = userRole && ['admin', 'camarero', 'caja'].includes(userRole)
@@ -411,7 +418,9 @@ const handleVerComanda = () => {
   // silencioso). En la UI hacemos un mini estado de loading para
   // evitar que tap rápidos disparen N llamadas — el resultado en
   // server sería el mismo (no-op) pero el spinner es buena UX.
-  const [reclamando, setReclamando] = useState(false)
+  // (useState de `reclamando` declarado arriba con los demás para
+  // mantener las reglas de hooks — early return de `if (!table)` rompía
+  // el orden si se declaraba aquí.)
   const handleReclamarMesa = async () => {
     if (!tableOpenOrder || reclamando) return
     setReclamando(true)
