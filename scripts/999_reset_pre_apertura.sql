@@ -65,19 +65,13 @@ WHERE restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9';
 
 
 -- =====================================================================
--- 4. Liberar todas las mesas a estado 'available'
+-- 4. (No-op) Estado de las mesas
 -- =====================================================================
--- Tras borrar orders, las mesas pueden quedar marcadas como 'seated'.
--- Las dejamos limpias. Bloqueadas (blocked) y reservadas (reserved)
--- conservan su estado por si el usuario las puso a mano — si quieres
--- resetear esos también, cambia el WHERE.
-UPDATE tables
-SET status = 'available'
-WHERE floor_plan_id IN (
-  SELECT id FROM floor_plans
-  WHERE restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9'
-)
-AND status = 'seated';
+-- La tabla `tables` no tiene columna `status` — el estado seated /
+-- available se calcula dinámicamente desde la presencia de orders
+-- abiertas (status='open') para esa mesa. Al haber borrado todas las
+-- orders en el paso 3, todas las mesas quedan automáticamente como
+-- 'available' en la UI. Nada que hacer aquí.
 
 
 -- =====================================================================
@@ -137,5 +131,5 @@ SELECT 'menu_categories', COUNT(*) FROM menu_categories WHERE restaurant_id = 'b
 UNION ALL
 SELECT 'menu_items', COUNT(*) FROM menu_items WHERE restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9'
 UNION ALL
-SELECT 'mesas_ocupadas', COUNT(*) FROM tables WHERE floor_plan_id IN (SELECT id FROM floor_plans WHERE restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9') AND status = 'seated'
+SELECT 'mesas_con_orden_abierta', COUNT(*) FROM orders WHERE restaurant_id = 'bf17533a-fc4e-43c9-a81f-50b364cca9a9' AND status = 'open'
 ORDER BY tabla;

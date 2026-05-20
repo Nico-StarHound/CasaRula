@@ -314,12 +314,11 @@ export async function transferOrder(
     return { success: false, error: 'Error moviendo la comanda: ' + updateErr.message }
   }
 
-  // 5. Cambiar estados de las mesas: origen libre, destino ocupada.
-  // NOTE: si tables.status no existe (en algunos despliegues está en
-  // otra fuente), esto es no-op por error silenciado. La fuente real
-  // del estado es la presencia de orders.open, lo cual ya quedó OK.
-  await supabase.from('tables').update({ status: 'available' }).eq('id', order.table_id)
-  await supabase.from('tables').update({ status: 'seated' }).eq('id', newTableId)
+  // 5. NO tocamos tables — la tabla 'tables' no tiene columna 'status'.
+  // El estado seated/available se deriva en la UI consultando orders
+  // con status='open' para cada mesa. Al haber movido orders.table_id,
+  // el cálculo dinámico ya refleja: origen libre (no tiene orders
+  // open), destino ocupada (sí las tiene).
 
   // 6. Encolar print job de aviso para cocina.
   if (restaurantId) {
