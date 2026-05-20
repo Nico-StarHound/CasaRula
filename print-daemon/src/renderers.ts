@@ -71,6 +71,12 @@ interface AnulacionPayload {
   printed_at: string
 }
 
+interface ReclamacionPayload {
+  table_label: string
+  staff_name: string | null
+  printed_at: string
+}
+
 interface RectificativaPayload {
   numero: string
   original_numero: string
@@ -710,6 +716,68 @@ export function renderRectificativa(payload: RectificativaPayload): ESCPOS {
   drawText(ctx, cursor, `nº ${payload.original_numero}.`, {
     size: 18, align: 'center',
   })
+  space(cursor, 30)
+
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
+  const e = new ESCPOS()
+  e.init()
+  e.rasterImageEscStar(bitmap, width, height)
+  e.feed(2).cut()
+  return e
+}
+
+// =====================================================================
+// Reclamación — aviso de mesa que necesita atención
+// =====================================================================
+//
+// Ticket muy corto y muy visible: banda negra grande "ATENCIÓN" arriba
+// (imposible de pasar por alto desde el otro extremo de la cocina),
+// mesa en tipografía enorme, hora. Sin lista de items — la mesa entera
+// es lo que se reclama (entrega 1). En entrega 2 añadiremos variante
+// para reclamar item concreto.
+export function renderReclamacion(payload: ReclamacionPayload): ESCPOS {
+  const approxHeight =
+    160 + // ATENCION band
+    180 + // mesa enorme
+    100 + // staff + hora + hr
+    100   // pie
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 18 }
+
+  // ── Banda invertida ATENCION — imposible de confundir con un
+  // ticket de comanda normal. Misma estética que ANULACION pero
+  // texto "ATENCION" para que el cocinero sepa que es reclamación.
+  const bandH = 110
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold 62px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  ctx.fillText('ATENCION', PRINT_WIDTH_PX / 2, cursor.y + 22)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH + 20
+
+  // ── Mesa grande y centrada
+  drawText(ctx, cursor, `MESA ${payload.table_label}`, {
+    size: 56, bold: true, align: 'center',
+  })
+  space(cursor, 10)
+
+  // ── Subtítulo: que el cocinero entienda en una mirada
+  drawText(ctx, cursor, 'reclama servicio', {
+    size: 24, align: 'center',
+  })
+
+  drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
+
+  // ── Hora + camarero
+  drawText(ctx, cursor, `${payload.staff_name || '—'}  ·  ${fmtTime(payload.printed_at)}`, {
+    size: 22, align: 'center',
+  })
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 16 })
   space(cursor, 30)
 
   const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))

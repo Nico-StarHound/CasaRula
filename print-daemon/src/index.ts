@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { ESCPOS } from './escpos.js'
-import { renderComanda, renderFactura, renderAnulacion, renderCuentaProvisional, renderRectificativa } from './renderers.js'
+import { renderComanda, renderFactura, renderAnulacion, renderCuentaProvisional, renderRectificativa, renderReclamacion } from './renderers.js'
 import { sendChunksToPrinter, type PrinterTarget } from './printer.js'
 
 const SUPABASE_URL = required('SUPABASE_URL')
@@ -120,6 +120,9 @@ async function processJob(job: {
         break
       case 'cuenta_provisional':
         escpos = renderCuentaProvisional(job.payload)
+        break
+      case 'reclamacion':
+        escpos = renderReclamacion(job.payload)
         break
       case 'test':
         escpos = new ESCPOS().init().align('center').bold(true).line('CASA RULA - TEST OK').feed(3).cut()

@@ -1066,6 +1066,16 @@ export async function markItemReady(itemId: string): Promise<{ success: boolean 
   // mismo tiempo. Marcar listo desde la cola O desde la lista
   // izquierda hace exactamente lo mismo (un solo item, un solo
   // estado) — son dos vistas de la misma fila.
+  //
+  // Buscamos primero el order_id antes de actualizar, porque tras
+  // el UPDATE puede no estar fácilmente accesible para el siguiente
+  // paso (limpiar reclamada_at del order).
+  const { data: row } = await supabase
+    .from('order_items')
+    .select('order_id')
+    .eq('id', itemId)
+    .single()
+
   await supabase
     .from('order_items')
     .update({
@@ -1075,6 +1085,20 @@ export async function markItemReady(itemId: string): Promise<{ success: boolean 
       prep_queue_position: null,
     })
     .eq('id', itemId)
+
+  // Auto-clear de la reclamación: marcar ready CUALQUIER item de la
+  // mesa quita el estado reclamada. La idea es que sacar comida =
+  // estamos atendiendo el problema, así que el indicador rojo del
+  // KDS desaparece. Si la mesa no estaba reclamada, este update es
+  // idempotente.
+  if (row?.order_id) {
+    await supabase
+      .from('orders')
+      .update({ reclamada_at: null })
+      .eq('id', row.order_id)
+      .not('reclamada_at', 'is', null)
+  }
+
   return { success: true }
 }
 
@@ -1103,7 +1127,105 @@ export async function markAllItemsReady(orderId: string): Promise<{
     .eq('order_id', orderId)
     .eq('status', 'in_kitchen')
 
+  // Auto-clear de la reclamación tras "Mesa lista".
+  await supabase
+    .from('orders')
+    .update({ reclamada_at: null })
+    .eq('id', orderId)
+    .not('reclamada_at', 'is', null)
+
   return { success: true, affected: snapshot || [] }
+}
+
+// =====================================================================
+// Reclamación de mesa
+// =====================================================================
+//
+// El camarero pulsa "Reclamar mesa" en el sheet de mesa del mapa.
+// Setea reclamada_at = now, encola un ticket de aviso en cocina, y
+// el KDS sube la mesa al top con pill rojo "ATENCIÓN".
+//
+// Cooldown de 30s server-side: si se reclama una mesa que ya fue
+// reclamada hace <30s, no encolamos otro ticket ni actualizamos el
+// timestamp. La mesa sigue marcada. Esto evita spam de impresoras
+// cuando un camarero pulsa varias veces por ansiedad.
+
+const RECLAMACION_COOLDOWN_MS = 30_000
+
+export async function reclamarMesa(
+  orderId: string
+): Promise<{ success: boolean; printed: boolean; reason?: string }> {
+  const supabase = createServiceClient()
+  const restaurantId = await getRestaurantId()
+
+  // Leer estado actual del order + mesa + staff para el payload.
+  const { data: order } = await supabase
+    .from('orders')
+    .select('id, table_id, reclamada_at, staff_id')
+    .eq('id', orderId)
+    .single()
+
+  if (!order) {
+    return { success: false, printed: false, reason: 'Order no encontrado' }
+  }
+
+  // Cooldown check. Si ya está reclamada y hace <30s, no-op (silencio).
+  if (order.reclamada_at) {
+    const last = new Date(order.reclamada_at).getTime()
+    const elapsed = Date.now() - last
+    if (elapsed < RECLAMACION_COOLDOWN_MS) {
+      return { success: true, printed: false, reason: 'cooldown' }
+    }
+  }
+
+  const now = new Date().toISOString()
+  await supabase
+    .from('orders')
+    .update({ reclamada_at: now })
+    .eq('id', orderId)
+
+  // Encolar ticket de aviso en cocina. Si no hay restaurantId
+  // (impossible aquí, pero defensivo) saltamos el print.
+  if (restaurantId) {
+    const { data: table } = await supabase
+      .from('tables')
+      .select('label')
+      .eq('id', order.table_id)
+      .single()
+
+    const { data: staff } = order.staff_id
+      ? await supabase.from('staff').select('name').eq('id', order.staff_id).single()
+      : { data: null }
+
+    await enqueuePrintJob({
+      restaurantId,
+      kind: 'reclamacion',
+      printerType: 'cocina',
+      orderId,
+      payload: {
+        table_label: table?.label || 'Mesa',
+        staff_name: staff?.name || null,
+        printed_at: now,
+      },
+    })
+  }
+
+  return { success: true, printed: true }
+}
+
+// "Visto" desde la card del KDS — limpia el estado sin marcar nada
+// listo. Útil cuando el cocinero ve la reclamación, ya está al
+// tanto, y quiere quitarse el rojo del KDS pero no tiene aún el
+// plato listo.
+export async function clearReclamacion(
+  orderId: string
+): Promise<{ success: boolean }> {
+  const supabase = createServiceClient()
+  await supabase
+    .from('orders')
+    .update({ reclamada_at: null })
+    .eq('id', orderId)
+  return { success: true }
 }
 
 // =====================================================================
@@ -1229,6 +1351,11 @@ export interface KdsItem {
     // camarera.
     orden_servicio: OrdenServicio
     rondas: string[][] | null
+    // Reclamación de mesa. Si !== null, el camarero la marcó como
+    // "necesita atención". Se sube al top del KDS con pill rojo
+    // 'ATENCIÓN'. Se limpia al markItemReady de cualquier item de la
+    // mesa o manualmente con clearReclamacion.
+    reclamada_at: string | null
     table: { id: string; label: string } | null
   } | null
 }
@@ -1247,7 +1374,7 @@ export async function getKdsItems(): Promise<KdsItem[]> {
       in_prep_queue_at, prep_queue_position,
       order:orders (
         id, nota_mesa, urgente, comensales,
-        orden_servicio, rondas,
+        orden_servicio, rondas, reclamada_at,
         table:tables ( id, label )
       )
     `)

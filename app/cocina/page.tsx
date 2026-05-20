@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, Zap, Undo2 } from 'lucide-react'
+import { Check, Zap, Undo2, Eye, BellRing } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -31,6 +31,7 @@ import {
   removeItemFromPrepQueue,
   reorderPrepQueue,
   restoreItemToKitchen,
+  clearReclamacion,
   type KdsItem
 } from '@/app/actions/comandas'
 import { getRestaurantConfig } from '@/app/actions/config'
@@ -79,6 +80,7 @@ interface OrderGroup {
   comensales: number
   notaMesa: string | null
   urgente: boolean
+  reclamadaAt: string | null
   ordenServicio: OrdenServicio
   rondas: string[][] | null
   items: KdsItem[]
@@ -116,6 +118,10 @@ export default function CocinaPage() {
   // - One ding per ORDER, not per item — five items hitting at once
   //   from the same table = 1 chime, not 5.
   const seenOrderIdsRef = useRef<Set<string> | null>(null)
+  // Mismo patrón para reclamaciones. Mapa orderId -> reclamada_at
+  // timestamp. Si el timestamp cambia (nueva reclamación), sonamos la
+  // alarma especial. NULL en la primera carga = baseline silenciosa.
+  const seenReclamationsRef = useRef<Map<string, string> | null>(null)
 
   // Plays a soft two-note chime — like a doorbell or a hotel reception
   // bell, not a robotic alarm. We don't ship an audio file because
@@ -194,6 +200,53 @@ export default function CocinaPage() {
     }
   }, [])
 
+  // Sonido de reclamación — distinto del ding normal, claramente más
+  // alarmante: tres pitidos cortos descendentes tipo alarma de cocina.
+  // Square wave + lowpass moderado para que suene urgente pero no
+  // distorsionado, sin la calidez de la campanilla. Volumen más alto
+  // (0.6) porque es información crítica de servicio.
+  const playReclamacion = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const ctx = new AudioCtx()
+
+      const master = ctx.createGain()
+      master.gain.value = 0.6
+      const lowpass = ctx.createBiquadFilter()
+      lowpass.type = 'lowpass'
+      lowpass.frequency.value = 2500
+      master.connect(lowpass)
+      lowpass.connect(ctx.destination)
+
+      const beep = (offset: number, freq: number) => {
+        const t = ctx.currentTime + offset
+        const osc = ctx.createOscillator()
+        osc.type = 'square'
+        osc.frequency.value = freq
+        const env = ctx.createGain()
+        env.gain.setValueAtTime(0.0001, t)
+        env.gain.exponentialRampToValueAtTime(1.0, t + 0.005)
+        env.gain.setValueAtTime(1.0, t + 0.11)
+        env.gain.exponentialRampToValueAtTime(0.0001, t + 0.14)
+        osc.connect(env)
+        env.connect(master)
+        osc.start(t)
+        osc.stop(t + 0.15)
+      }
+
+      // Tres pitidos descendentes 880Hz → 700Hz → 550Hz, separados
+      // 170ms. Patrón clásico de alarma "atención": va bajando, suena
+      // a "ojo-ojo-ojo".
+      beep(0, 880)
+      beep(0.17, 700)
+      beep(0.34, 550)
+
+      setTimeout(() => { void ctx.close() }, 700)
+    } catch {
+      // ignore — visual fallback en la card
+    }
+  }, [])
+
   const fetchItems = useCallback(async () => {
     const [kdsItems, config] = await Promise.all([
       getKdsItems(),
@@ -225,11 +278,42 @@ export default function CocinaPage() {
       if (hasNew) playDing()
     }
 
+    // Detect new reclamaciones. Para cada order construimos un mapa
+    // orderId -> reclamada_at. Si en este tick aparece un orderId con
+    // un timestamp DISTINTO al de la última vez (o que antes era
+    // null/no estaba), suena la alarma de reclamación.
+    // - Primer render: baseline silencioso, no suena.
+    // - Reclamación recién creada: sonó.
+    // - Reclamación re-creada después de cooldown (timestamp nuevo):
+    //   suena otra vez. Es lo deseado — es un evento nuevo.
+    // - Si el timestamp no cambia, no suena, aunque la card siga
+    //   visible en rojo.
+    const currentReclamations = new Map<string, string>()
+    for (const item of kdsItems) {
+      if (item.order?.id && item.order.reclamada_at) {
+        currentReclamations.set(item.order.id, item.order.reclamada_at)
+      }
+    }
+    if (seenReclamationsRef.current === null) {
+      seenReclamationsRef.current = currentReclamations
+    } else {
+      let hasNewReclamation = false
+      for (const [orderId, ts] of currentReclamations) {
+        const prev = seenReclamationsRef.current.get(orderId)
+        if (prev !== ts) {
+          hasNewReclamation = true
+          break
+        }
+      }
+      seenReclamationsRef.current = currentReclamations
+      if (hasNewReclamation) playReclamacion()
+    }
+
     setItems(kdsItems)
     setWarningMinutes(config?.kds_warning_minutes ?? 10)
     setDangerMinutes(config?.kds_danger_minutes ?? 20)
     setLoading(false)
-  }, [playDing])
+  }, [playDing, playReclamacion])
 
   // Initial fetch and realtime subscription
   useEffect(() => {
@@ -283,6 +367,7 @@ export default function CocinaPage() {
         comensales: item.order.comensales,
         notaMesa: item.order.nota_mesa,
         urgente: item.order.urgente,
+        reclamadaAt: item.order.reclamada_at,
         ordenServicio: item.order.orden_servicio,
         rondas: item.order.rondas,
         // Si la mesa tiene rondas configuradas, ordenamos los items
@@ -300,8 +385,20 @@ export default function CocinaPage() {
     }
   }
 
-  // Sort: urgente first, then by earliest sent_at
+  // Orden de prioridad en el KDS:
+  //   1. Reclamadas (más reciente arriba — la más nueva al top)
+  //   2. Urgentes
+  //   3. Resto, por earliestSentAt ascendente (más vieja primero)
+  // Una mesa puede ser reclamada Y urgente: reclamada gana porque es
+  // intervención activa de servicio.
   orderGroups.sort((a, b) => {
+    const aR = a.reclamadaAt !== null
+    const bR = b.reclamadaAt !== null
+    if (aR !== bR) return aR ? -1 : 1
+    if (aR && bR) {
+      // Las dos reclamadas: la más recientemente reclamada al top.
+      return new Date(b.reclamadaAt!).getTime() - new Date(a.reclamadaAt!).getTime()
+    }
     if (a.urgente !== b.urgente) return a.urgente ? -1 : 1
     if (!a.earliestSentAt) return 1
     if (!b.earliestSentAt) return -1
@@ -379,6 +476,24 @@ export default function CocinaPage() {
 
     setItems(prev => prev.filter(i => i.order?.id !== orderId))
     await markAllItemsReady(orderId)
+  }
+
+  // "Visto" del cocinero: limpia el estado reclamada sin marcar nada
+  // listo. La card sale del top y vuelve a su orden normal. No es
+  // deshacible — si fue un click sin querer, el camarero puede volver
+  // a reclamar. Optimistic: limpiamos el reclamadaAt local antes de
+  // esperar al server.
+  const handleClearReclamacion = async (orderId: string) => {
+    setItems(prev => prev.map(i =>
+      i.order?.id === orderId && i.order
+        ? { ...i, order: { ...i.order, reclamada_at: null } }
+        : i
+    ))
+    // También limpiamos el ref para que no se vuelva a disparar el
+    // sonido si por alguna razón el snapshot trae el mismo timestamp
+    // de vuelta (no debería, pero defensivo).
+    seenReclamationsRef.current?.delete(orderId)
+    await clearReclamacion(orderId)
   }
 
   // Push a undo action with stack limit. Most recent at the end.
@@ -613,12 +728,17 @@ export default function CocinaPage() {
             // orden visual (urgente > antiguo) no es crítico — el
             // cocinero igual mira la card por mesa.
             <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 items-start grid-flow-dense">
-              {orderGroups.map(group => (
-                <div 
-                  key={group.orderId} 
+              {orderGroups.map(group => {
+                const isReclamada = group.reclamadaAt !== null
+                return (
+                <div
+                  key={group.orderId}
                   className={cn(
                     "bg-gray-900 rounded-xl p-4",
-                    group.urgente && "ring-2 ring-red-500"
+                    // Una mesa urgente Y reclamada se ve igual de roja
+                    // (mismo ring). El pill al lado del nombre diferencia
+                    // el por qué.
+                    (group.urgente || isReclamada) && "ring-2 ring-red-500"
                   )}
                 >
                   {/* Order header.
@@ -636,6 +756,17 @@ export default function CocinaPage() {
                       {group.urgente && (
                         <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 whitespace-nowrap flex-shrink-0">
                           <Zap className="h-3 w-3" /> URGENTE
+                        </span>
+                      )}
+                      {/* Pill ATENCIÓN: la mesa fue reclamada por el
+                          camarero. Coexiste con URGENTE — si una mesa
+                          es ambas, salen ambos pills. Misma estética
+                          roja para que el cocinero vea de un vistazo
+                          que hay algo crítico. Usa BellRing en lugar de
+                          Zap para diferenciar la intención. */}
+                      {isReclamada && (
+                        <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+                          <BellRing className="h-3 w-3" /> ATENCION
                         </span>
                       )}
                       {/* Modo de servicio. Solo mostramos cuando NO es
@@ -669,6 +800,22 @@ export default function CocinaPage() {
                         )}>
                           {formatTime(getElapsedSeconds(group.earliestSentAt.toISOString()))}
                         </span>
+                      )}
+                      {/* Botón "Visto" solo en mesas reclamadas. Quita
+                          el estado reclamada sin marcar nada listo.
+                          También se limpia auto al marcar ready
+                          cualquier item, pero esto permite al cocinero
+                          decir "vale, ya lo vi" sin tocar más nada. */}
+                      {isReclamada && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-10 px-3 border-red-500 text-red-400 hover:bg-red-950 hover:text-red-300"
+                          onClick={() => handleClearReclamacion(group.orderId)}
+                          title="Quitar reclamación (visto)"
+                        >
+                          <Eye className="h-4 w-4 mr-1" /> Visto
+                        </Button>
                       )}
                       <Button
                         size="sm"
@@ -755,7 +902,8 @@ export default function CocinaPage() {
                     })()}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </main>

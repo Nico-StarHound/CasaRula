@@ -48,7 +48,7 @@ import {
 import type { Table, TableStatus, Reservation, StaffRole } from '@/lib/types'
 import { updateTable } from '@/app/actions/floor-plan'
 import { updateReservationStatus } from '@/app/actions/reservations'
-import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, type Order } from '@/app/actions/comandas'
+import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, reclamarMesa, type Order } from '@/app/actions/comandas'
 import { cn } from '@/lib/utils'
 
 interface TableActionSheetProps {
@@ -405,6 +405,23 @@ const handleVerComanda = () => {
     window.location.href = `/cuenta/${table.id}`
   }
 
+  // Reclamar mesa: el camarero ve que la mesa lleva esperando y avisa
+  // a cocina sin tener que entrar a la comanda. El backend hace
+  // cooldown de 30s (si la mesa fue reclamada hace <30s, no-op
+  // silencioso). En la UI hacemos un mini estado de loading para
+  // evitar que tap rápidos disparen N llamadas — el resultado en
+  // server sería el mismo (no-op) pero el spinner es buena UX.
+  const [reclamando, setReclamando] = useState(false)
+  const handleReclamarMesa = async () => {
+    if (!tableOpenOrder || reclamando) return
+    setReclamando(true)
+    try {
+      await reclamarMesa(tableOpenOrder.id)
+    } finally {
+      setReclamando(false)
+    }
+  }
+
   const generateCuentaHTML = (
     items: Order['items'],
     tableLabel: string,
@@ -601,6 +618,25 @@ const handleVerComanda = () => {
                                 >
                                   <CreditCard className="mr-2 h-5 w-5" />
                                   Cuenta · {tableOpenOrder.total.toFixed(2)}€
+                                </Button>
+                              )}
+
+                              {/* Reclamar mesa.
+                                  Solo visible si hay orden abierta — sin
+                                  comanda no hay nada que reclamar. El
+                                  backend hace cooldown de 30s: pulsar
+                                  varias veces es seguro. */}
+                              {tableOpenOrder && (
+                                <Button
+                                  variant="outline"
+                                  className="w-full h-11 border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  onClick={handleReclamarMesa}
+                                  disabled={reclamando}
+                                >
+                                  {reclamando
+                                    ? <Spinner className="mr-2" />
+                                    : <AlertTriangle className="mr-2 h-5 w-5" />}
+                                  Reclamar mesa
                                 </Button>
                               )}
 
