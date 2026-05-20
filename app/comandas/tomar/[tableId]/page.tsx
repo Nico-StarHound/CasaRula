@@ -991,9 +991,16 @@ const handleSendToKitchen = async () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Menu section - full width on mobile, left panel on desktop */}
         <div className="flex-1 flex flex-col lg:border-r">
-          {/* Category tabs */}
-          <ScrollArea className="flex-shrink-0 border-b">
-            <div className="flex gap-1 p-2">
+          {/* Category tabs.
+              Multi-fila con flex-wrap: cuando las categorías no caben
+              en una sola línea, saltan a la siguiente. Antes era un
+              ScrollArea horizontal con whitespace-nowrap; en tablets
+              estrechas (Lenovo / Redmi) el scroll lateral pasaba
+              desapercibido y categorías como CAFES E INF o AGUA Y
+              REFRESCOS no se veían sin tocar y arrastrar.
+              Ahora ocupa más altura pero todas visibles siempre. */}
+          <div className="flex-shrink-0 border-b">
+            <div className="flex flex-wrap gap-1 p-2">
               {menu.map(cat => (
                 <button
                   key={cat.id}
@@ -1009,7 +1016,7 @@ const handleSendToKitchen = async () => {
                 </button>
               ))}
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Menu items grid */}
           <ScrollArea className="flex-1">
