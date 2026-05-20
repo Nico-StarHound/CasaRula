@@ -124,12 +124,11 @@ const RESTART_WINDOW_MS = 60_000  // 1 minuto
 
 function daemonEntryPoint(): string {
   // En desarrollo el daemon vive en ../print-daemon/src/index.ts.
-  // Empaquetado, lo dejamos FUERA del asar con asarUnpack porque tsx/
-  // node necesita acceder al archivo .ts real en disco, no a uno
-  // dentro de un archivo asar. process.resourcesPath/app.asar.unpacked/
-  // print-daemon/ es donde aterriza.
+  // Empaquetado, electron-builder copia el daemon a Resources/print-daemon/
+  // gracias al campo extraResources del package.json. process.resourcesPath
+  // apunta a Casa Rula Print.app/Contents/Resources/ en producción.
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'app.asar.unpacked', 'print-daemon', 'src', 'index.js')
+    return path.join(process.resourcesPath, 'print-daemon', 'src', 'index.js')
   }
   return path.resolve(__dirname, '..', '..', 'print-daemon', 'src', 'index.ts')
 }
