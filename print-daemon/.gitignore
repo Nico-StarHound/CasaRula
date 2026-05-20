@@ -1,3 +1,7 @@
 node_modules
 .env
 *.log
+# .js generados por tsconfig.build.json al hacer npm run build
+# (necesarios para empaquetar la app Electron, no deben commitearse)
+src/*.js
+src/*.js.map

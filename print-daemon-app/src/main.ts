@@ -124,11 +124,12 @@ const RESTART_WINDOW_MS = 60_000  // 1 minuto
 
 function daemonEntryPoint(): string {
   // En desarrollo el daemon vive en ../print-daemon/src/index.ts.
-  // Empaquetado, electron-builder copia print-daemon dentro del .asar
-  // bundle. Resolvemos según si estamos packaged o no.
+  // Empaquetado, lo dejamos FUERA del asar con asarUnpack porque tsx/
+  // node necesita acceder al archivo .ts real en disco, no a uno
+  // dentro de un archivo asar. process.resourcesPath/app.asar.unpacked/
+  // print-daemon/ es donde aterriza.
   if (app.isPackaged) {
-    // En .asar la ruta es relativa al recursos del bundle.
-    return path.join(process.resourcesPath, 'app.asar', '..', 'print-daemon', 'src', 'index.js')
+    return path.join(process.resourcesPath, 'app.asar.unpacked', 'print-daemon', 'src', 'index.js')
   }
   return path.resolve(__dirname, '..', '..', 'print-daemon', 'src', 'index.ts')
 }
@@ -291,12 +292,11 @@ function trayIconPath(): string {
     state.status === 'running' ? 'warning' :
     'error'
   // Iconos template para macOS (con sufijo Template los pinta auto
-  // según el tema del menubar). Si no encuentra el archivo, Electron
-  // muestra un cuadrado en negro pero no crashea.
+  // según el tema del menubar). Los assets viven dentro del asar
+  // bundle — Electron resuelve __dirname/../assets correctamente
+  // tanto en dev como packaged porque nativeImage sabe leer del asar.
   const file = `tray-${variant}Template.png`
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'assets', file)
-    : path.join(__dirname, '..', 'assets', file)
+  return path.join(__dirname, '..', 'assets', file)
 }
 
 function updateTrayIcon() {
@@ -354,11 +354,9 @@ function openLogsWindow() {
       contextIsolation: true,
     },
   })
-  logsWindow.loadFile(
-    app.isPackaged
-      ? path.join(process.resourcesPath, 'renderer', 'logs.html')
-      : path.join(__dirname, '..', 'renderer', 'logs.html')
-  )
+  // BrowserWindow.loadFile sabe leer del asar bundle directamente,
+  // así que __dirname/../renderer funciona igual en dev y packaged.
+  logsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'))
   logsWindow.on('closed', () => { logsWindow = null })
   // Cuando termine de cargar, le mandamos los logs actuales.
   logsWindow.webContents.on('did-finish-load', () => {
@@ -382,11 +380,7 @@ function openConfigWindow() {
       contextIsolation: true,
     },
   })
-  configWindow.loadFile(
-    app.isPackaged
-      ? path.join(process.resourcesPath, 'renderer', 'config.html')
-      : path.join(__dirname, '..', 'renderer', 'config.html')
-  )
+  configWindow.loadFile(path.join(__dirname, '..', 'renderer', 'config.html'))
   configWindow.on('closed', () => { configWindow = null })
   configWindow.webContents.on('did-finish-load', () => {
     configWindow?.webContents.send('config-init', loadConfig())

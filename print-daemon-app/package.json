@@ -9,9 +9,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:daemon": "cd ../print-daemon && npm run build",
     "start": "npm run build && electron .",
     "dev": "tsc -w -p tsconfig.json & electron .",
-    "dist": "npm run build && electron-builder --mac --arm64 --x64 -p never"
+    "dist": "npm run build:daemon && npm run build && electron-builder --mac --arm64 -p never"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.0",
@@ -34,9 +35,14 @@
       "dist/**/*",
       "renderer/**/*",
       "assets/**/*",
-      "../print-daemon/src/**/*",
+      "../print-daemon/src/**/*.js",
       "../print-daemon/fonts/**/*",
+      "../print-daemon/package.json",
+      "../print-daemon/node_modules/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/print-daemon/**"
     ],
     "extraMetadata": {
       "main": "dist/main.js"
