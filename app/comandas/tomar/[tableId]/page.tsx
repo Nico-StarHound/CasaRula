@@ -1439,49 +1439,38 @@ const handleSendToKitchen = async () => {
       >
         <SheetContent side="bottom" className="h-auto max-h-[90vh]">
           <SheetHeader className="text-left">
-            <SheetTitle>Cancelar item enviado</SheetTitle>
-            <SheetDescription>
+            <SheetTitle>
               {(() => {
                 const it = order?.items.find(i => i.id === cancelItemId)
-                return it
-                  ? `Se imprimirá un aviso de anulación en la impresora correspondiente para ${it.name}.`
-                  : 'Se imprimirá un aviso de anulación en la impresora correspondiente.'
+                return it ? `¿Anular "${it.name}"?` : '¿Anular item?'
               })()}
+            </SheetTitle>
+            <SheetDescription>
+              Se imprimirá un aviso de anulación en la impresora correspondiente.
             </SheetDescription>
           </SheetHeader>
-          <div className="px-4 py-4 space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Motivo (obligatorio)</label>
-              <Input
-                value={cancelMotivo}
-                onChange={(e) => setCancelMotivo(e.target.value)}
-                placeholder="Ej: cliente cambió de opinión"
-                autoFocus
-                className="h-12 text-base"
-              />
-            </div>
-            <div className="flex gap-2 pt-2">
+          <div className="px-4 py-4">
+            <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="lg"
-                className="flex-1 h-12"
+                className="flex-1 h-14 text-base"
                 onClick={() => {
                   setCancelItemId(null)
                   setCancelMotivo('')
                 }}
               >
-                No cancelar
+                No
               </Button>
               <Button
                 variant="destructive"
                 size="lg"
-                className="flex-1 h-12"
+                className="flex-1 h-14 text-base"
                 onClick={() => {
                   if (cancelItemId) handleCancelItem(cancelItemId)
                 }}
-                disabled={!cancelMotivo.trim()}
               >
-                Cancelar item
+                Sí, anular
               </Button>
             </div>
           </div>
