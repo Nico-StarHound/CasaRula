@@ -77,6 +77,12 @@ interface ReclamacionPayload {
   printed_at: string
 }
 
+interface CambioMesaPayload {
+  from_label: string
+  to_label: string
+  printed_at: string
+}
+
 interface RectificativaPayload {
   numero: string
   original_numero: string
@@ -774,6 +780,72 @@ export function renderReclamacion(payload: ReclamacionPayload): ESCPOS {
 
   // ── Hora + camarero
   drawText(ctx, cursor, `${payload.staff_name || '—'}  ·  ${fmtTime(payload.printed_at)}`, {
+    size: 22, align: 'center',
+  })
+
+  drawHr(ctx, cursor, { dashed: true, marginY: 16 })
+  space(cursor, 30)
+
+  const trimmed = trimCanvas(canvas, Math.min(approxHeight, Math.ceil(cursor.y)))
+  const { bitmap, width, height } = canvasToMonoBitmap(trimmed)
+  const e = new ESCPOS()
+  e.init()
+  e.rasterImageEscStar(bitmap, width, height)
+  e.feed(2).cut()
+  return e
+}
+
+// =====================================================================
+// Cambio de mesa — aviso a cocina cuando una comanda se mueve
+// =====================================================================
+//
+// El camarero ha movido una comanda de la mesa X a la Y (desde el
+// TableActionSheet, opción "Cambiar de mesa"). Cocina necesita saberlo
+// porque las comandas que ya tenían en marcha para la mesa X ahora
+// deben servirse a la Y. Si no lo supieran, sacarían la comida al
+// sitio equivocado.
+//
+// Ticket pequeño con texto enorme: "CAMBIO" + "MESA X -> MESA Y" para
+// que se vea de un vistazo. Sin items: el KDS los lleva ya con el
+// table_label actualizado por reactividad.
+export function renderCambioMesa(payload: CambioMesaPayload): ESCPOS {
+  const approxHeight =
+    160 + // banda CAMBIO
+    180 + // mesa origen -> destino
+    80  + // hora
+    80    // pie
+  const { canvas, ctx } = createTicketCanvas(approxHeight)
+  const cursor: CursorState = { y: 18 }
+
+  // ── Banda invertida CAMBIO
+  const bandH = 110
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, cursor.y, PRINT_WIDTH_PX, bandH)
+  ctx.fillStyle = 'white'
+  ctx.font = `bold 62px Inter Bold`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
+  ctx.fillText('CAMBIO', PRINT_WIDTH_PX / 2, cursor.y + 22)
+  ctx.fillStyle = 'black'
+  cursor.y += bandH + 20
+
+  // ── Mesa origen -> destino, en una sola línea grande
+  drawText(ctx, cursor, `MESA ${payload.from_label}`, {
+    size: 44, bold: true, align: 'center',
+  })
+  space(cursor, 6)
+  drawText(ctx, cursor, '↓', {
+    size: 36, align: 'center',
+  })
+  space(cursor, 6)
+  drawText(ctx, cursor, `MESA ${payload.to_label}`, {
+    size: 44, bold: true, align: 'center',
+  })
+
+  drawHr(ctx, cursor, { thickness: 2, marginY: 18 })
+
+  // ── Hora
+  drawText(ctx, cursor, fmtTime(payload.printed_at), {
     size: 22, align: 'center',
   })
 

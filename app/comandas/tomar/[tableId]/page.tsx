@@ -43,6 +43,8 @@ import {
   type ModifierGroup,
 } from '@/app/actions/comandas'
 import { getTables } from '@/app/actions/floor-plan'
+import { CustomItemModal } from '@/components/custom-item-modal'
+import { ChefHat, Coffee } from 'lucide-react'
 
 export default function TableOrderPage({ params }: { params: Promise<{ tableId: string }> }) {
   const { tableId } = use(params)
@@ -65,6 +67,10 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
   const [cancelMotivo, setCancelMotivo] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
+
+  // Modal de item custom (categoría OTROS). Cuando es null → cerrado.
+  // Cuando vale 'cocina' o 'barra' → abierto con ese destino fijado.
+  const [customModalDest, setCustomModalDest] = useState<'cocina' | 'barra' | null>(null)
   
   // Service config state
   const [serviceSheetOpen, setServiceSheetOpen] = useState(false)
@@ -181,6 +187,36 @@ export default function TableOrderPage({ params }: { params: Promise<{ tableId: 
     // Trigger animation
     setLastAddedId(selectedItem.id)
     setTimeout(() => setLastAddedId(null), 600)
+  }
+
+  /**
+   * Añadir item custom (sin entry en menu_items). Lo dispara el modal
+   * CustomItemModal al confirmar, desde los botones grandes "Otros a
+   * cocina / Otros a barra" que aparecen en la categoría OTROS.
+   *
+   * No hay menu_item_id porque el item no existe en la BBDD. El
+   * server action addItemToOrder lo acepta así — guarda solo el
+   * snapshot de nombre/precio/notas en order_items.
+   *
+   * Devuelve true al padre si OK para que cierre el modal. Si false,
+   * el modal muestra error y deja al usuario reintentar.
+   */
+  const handleAddCustomItem = async (
+    data: { name: string; price: number; notes?: string },
+    destination: 'cocina' | 'barra'
+  ): Promise<boolean> => {
+    if (!order) return false
+    const res = await addItemToOrder(order.id, {
+      name: data.name,
+      price: data.price,
+      quantity: 1,
+      notes: data.notes,
+      printer_target: destination,
+    })
+    if (!res.success) return false
+    const updated = await getOrCreateOrder(tableId)
+    setOrder(updated)
+    return true
   }
 
   const toggleModifierOption = (groupId: string, optionId: string, multiSelect: boolean) => {
@@ -1018,48 +1054,82 @@ const handleSendToKitchen = async () => {
             </div>
           </div>
 
-          {/* Menu items grid */}
+          {/* Menu items grid.
+              Caso especial: si la categoría activa es OTROS (comodín
+              para items que no están en la carta), en lugar de mostrar
+              los items normales mostramos dos botones grandes que abren
+              el modal de item custom. El camarero teclea nombre +
+              precio + notas y el item va directo a cocina o a barra
+              según qué botón haya pulsado. */}
           <ScrollArea className="flex-1">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 p-3 pb-24 lg:pb-3">
-              {activeItems.map(item => {
-                const isAdded = lastAddedId === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleTapMenuItem(
-                      item,
-                      menu.find(c => c.id === activeCategory)?.printer_target || undefined
-                    )}
-                    className={cn(
-                      "relative flex flex-col items-start p-3 rounded-lg border bg-card text-left touch-manipulation transition-transform duration-150",
-                      isAdded ? "scale-95" : "hover:bg-accent active:scale-95"
-                    )}
-                  >
-                    {/* Green checkmark overlay */}
-                    <div 
-                      className={cn(
-                        "absolute inset-0 bg-green-500/90 rounded-lg flex items-center justify-center transition-opacity duration-300",
-                        isAdded ? "opacity-100" : "opacity-0 pointer-events-none"
-                      )}
-                      style={{ 
-                        animation: isAdded ? 'fadeInOut 600ms ease-out forwards' : 'none'
-                      }}
-                    >
-                      <Check className="h-8 w-8 text-white" strokeWidth={3} />
-                    </div>
-                    <span className="font-medium text-sm line-clamp-2">{item.name}</span>
-                    <span className="text-sm text-muted-foreground mt-1">
-                      {item.price != null ? `${item.price.toFixed(2)}€` : 'Consultar'}
-                    </span>
-                  </button>
-                )
-              })}
-              {activeItems.length === 0 && (
-                <p className="col-span-full text-center text-muted-foreground py-8">
-                  No hay productos en esta categoría
+            {menu.find(c => c.id === activeCategory)?.name === 'OTROS' ? (
+              <div className="flex flex-col gap-3 p-3 pb-24 lg:pb-3">
+                <p className="text-sm text-muted-foreground text-center mb-1">
+                  Crea un item personalizado y elige a dónde se envía.
                 </p>
-              )}
-            </div>
+                <button
+                  onClick={() => setCustomModalDest('cocina')}
+                  className="flex flex-col items-center justify-center gap-2 py-8 rounded-lg border-2 border-dashed bg-card hover:bg-accent active:scale-95 transition-all touch-manipulation"
+                >
+                  <ChefHat className="h-10 w-10 text-primary" />
+                  <span className="font-semibold text-base">Otros a cocina</span>
+                  <span className="text-xs text-muted-foreground">
+                    Plato custom para cocina
+                  </span>
+                </button>
+                <button
+                  onClick={() => setCustomModalDest('barra')}
+                  className="flex flex-col items-center justify-center gap-2 py-8 rounded-lg border-2 border-dashed bg-card hover:bg-accent active:scale-95 transition-all touch-manipulation"
+                >
+                  <Coffee className="h-10 w-10 text-primary" />
+                  <span className="font-semibold text-base">Otros a barra</span>
+                  <span className="text-xs text-muted-foreground">
+                    Bebida o consumición custom para barra
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2 p-3 pb-24 lg:pb-3">
+                {activeItems.map(item => {
+                  const isAdded = lastAddedId === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleTapMenuItem(
+                        item,
+                        menu.find(c => c.id === activeCategory)?.printer_target || undefined
+                      )}
+                      className={cn(
+                        "relative flex flex-col items-start p-3 rounded-lg border bg-card text-left touch-manipulation transition-transform duration-150",
+                        isAdded ? "scale-95" : "hover:bg-accent active:scale-95"
+                      )}
+                    >
+                      {/* Green checkmark overlay */}
+                      <div
+                        className={cn(
+                          "absolute inset-0 bg-green-500/90 rounded-lg flex items-center justify-center transition-opacity duration-300",
+                          isAdded ? "opacity-100" : "opacity-0 pointer-events-none"
+                        )}
+                        style={{
+                          animation: isAdded ? 'fadeInOut 600ms ease-out forwards' : 'none'
+                        }}
+                      >
+                        <Check className="h-8 w-8 text-white" strokeWidth={3} />
+                      </div>
+                      <span className="font-medium text-sm line-clamp-2">{item.name}</span>
+                      <span className="text-sm text-muted-foreground mt-1">
+                        {item.price != null ? `${item.price.toFixed(2)}€` : 'Consultar'}
+                      </span>
+                    </button>
+                  )
+                })}
+                {activeItems.length === 0 && (
+                  <p className="col-span-full text-center text-muted-foreground py-8">
+                    No hay productos en esta categoría
+                  </p>
+                )}
+              </div>
+            )}
           </ScrollArea>
         </div>
 
@@ -1363,6 +1433,18 @@ const handleSendToKitchen = async () => {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Modal de item custom (categoría OTROS).
+          customModalDest controla apertura + destino. null = cerrado. */}
+      <CustomItemModal
+        open={customModalDest !== null}
+        destination={customModalDest || 'cocina'}
+        onClose={() => setCustomModalDest(null)}
+        onConfirm={async (data) => {
+          if (!customModalDest) return false
+          return handleAddCustomItem(data, customModalDest)
+        }}
+      />
     </div>
     </>
   )

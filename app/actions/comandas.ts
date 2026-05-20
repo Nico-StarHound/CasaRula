@@ -164,6 +164,10 @@ export interface OrderItem {
   notes?: string
   modifier_summary?: { name: string; price: number }[]
   printer_target?: string
+  // Si está reclamado (Entrega 2), timestamp. Permite al botón de
+  // "Reclamar" en la UI mostrar estado visual ya activo y al server
+  // hacer cooldown (30s) sin reimprimir si se vuelve a tocar.
+  reclamado_at?: string | null
 }
 
 export type OrdenServicio = 'sin_orden' | 'todo_junto' | 'por_rondas' | 'uno_a_uno'
@@ -220,6 +224,7 @@ export async function getOpenOrder(tableId: string): Promise<Order | null> {
       notes: i.notes,
       modifier_summary: i.modifier_summary || [],
       printer_target: i.printer_target,
+      reclamado_at: i.reclamado_at || null,
     }))
   }
 }
@@ -227,6 +232,110 @@ export async function getOpenOrder(tableId: string): Promise<Order | null> {
 export async function cancelOrder(orderId: string): Promise<{ success: boolean }> {
   const supabase = createServiceClient()
   await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId)
+  return { success: true }
+}
+
+// =====================================================================
+// Transferir comanda de una mesa a otra
+// =====================================================================
+//
+// El camarero pulsa "Cambiar de mesa" en TableActionSheet sobre una
+// mesa ocupada. Se muestra un grid con las mesas libres y al elegir
+// destino:
+//
+//   1. Validamos que origen y destino existen, que origen tiene order
+//      abierta y que destino está libre (sin order abierta).
+//   2. Validamos que la cuenta NO se haya pedido todavía (cuenta_pedida
+//      = false). Si ya se pidió, se rechaza — porque ya hubo papeles
+//      impresos con la mesa anterior.
+//   3. Cambiamos orders.table_id al nuevo y actualizamos tables.status
+//      (origen a 'available', destino a 'seated').
+//   4. Encolamos print job 'cambio_mesa' que imprime un papelito chico
+//      en cocina con "MESA X -> MESA Y" para que cocina sepa que ya no
+//      tienen que sacar a la mesa antigua.
+
+export async function transferOrder(
+  orderId: string,
+  newTableId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = createServiceClient()
+  const restaurantId = await getRestaurantId()
+
+  // 1. Leer order + mesa origen.
+  const { data: order } = await supabase
+    .from('orders')
+    .select('id, table_id, status, cuenta_pedida, restaurant_id')
+    .eq('id', orderId)
+    .single()
+
+  if (!order) return { success: false, error: 'Comanda no encontrada' }
+  if (order.status !== 'open') {
+    return { success: false, error: `Solo se puede mover comandas abiertas (estado actual: ${order.status})` }
+  }
+  if (order.cuenta_pedida) {
+    return { success: false, error: 'No se puede cambiar la mesa: ya se pidió la cuenta.' }
+  }
+  if (order.table_id === newTableId) {
+    return { success: false, error: 'La mesa destino es la misma que la actual.' }
+  }
+
+  // 2. Leer mesa origen y destino para validar destino libre + labels.
+  const { data: tablesData } = await supabase
+    .from('tables')
+    .select('id, label')
+    .in('id', [order.table_id, newTableId])
+
+  const tables = tablesData || []
+  const fromTable = tables.find(t => t.id === order.table_id)
+  const toTable = tables.find(t => t.id === newTableId)
+
+  if (!fromTable || !toTable) {
+    return { success: false, error: 'Mesa origen o destino no encontradas.' }
+  }
+
+  // 3. Validar destino libre: no debe tener orders abiertas.
+  const { count: destOpenCount } = await supabase
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('table_id', newTableId)
+    .eq('status', 'open')
+
+  if (destOpenCount && destOpenCount > 0) {
+    return { success: false, error: 'La mesa destino ya tiene una comanda abierta.' }
+  }
+
+  // 4. Mover la order a la nueva mesa.
+  const { error: updateErr } = await supabase
+    .from('orders')
+    .update({ table_id: newTableId })
+    .eq('id', orderId)
+
+  if (updateErr) {
+    return { success: false, error: 'Error moviendo la comanda: ' + updateErr.message }
+  }
+
+  // 5. Cambiar estados de las mesas: origen libre, destino ocupada.
+  // NOTE: si tables.status no existe (en algunos despliegues está en
+  // otra fuente), esto es no-op por error silenciado. La fuente real
+  // del estado es la presencia de orders.open, lo cual ya quedó OK.
+  await supabase.from('tables').update({ status: 'available' }).eq('id', order.table_id)
+  await supabase.from('tables').update({ status: 'seated' }).eq('id', newTableId)
+
+  // 6. Encolar print job de aviso para cocina.
+  if (restaurantId) {
+    await enqueuePrintJob({
+      restaurantId,
+      kind: 'cambio_mesa',
+      printerType: 'cocina',
+      orderId: orderId,
+      payload: {
+        from_label: fromTable.label,
+        to_label: toTable.label,
+        printed_at: new Date().toISOString(),
+      },
+    })
+  }
+
   return { success: true }
 }
 
@@ -512,6 +621,7 @@ export async function getOrCreateOrder(tableId: string): Promise<Order | null> {
       notes: i.notes,
       modifier_summary: i.modifier_summary || [],
       printer_target: i.printer_target,
+      reclamado_at: i.reclamado_at || null,
     }))
   }
 }
@@ -1083,6 +1193,9 @@ export async function markItemReady(itemId: string): Promise<{ success: boolean 
       ready_at: new Date().toISOString(),
       in_prep_queue_at: null,
       prep_queue_position: null,
+      // Marcar listo también limpia la reclamación de este item.
+      // Si no estaba reclamado, este update es idempotente.
+      reclamado_at: null,
     })
     .eq('id', itemId)
 
@@ -1123,6 +1236,10 @@ export async function markAllItemsReady(orderId: string): Promise<{
       ready_at: new Date().toISOString(),
       in_prep_queue_at: null,
       prep_queue_position: null,
+      // "Mesa lista" implica que todos los items reclamados también
+      // dejan de estarlo. El sacar comida es la respuesta esperada
+      // a una reclamación.
+      reclamado_at: null,
     })
     .eq('order_id', orderId)
     .eq('status', 'in_kitchen')
@@ -1226,6 +1343,99 @@ export async function clearReclamacion(
     .update({ reclamada_at: null })
     .eq('id', orderId)
   return { success: true }
+}
+
+// =====================================================================
+// Reclamación de item concreto (Entrega 2)
+// =====================================================================
+//
+// El camarero pulsa "Reclamar" sobre un plato concreto desde el panel
+// de comanda. A diferencia de reclamarMesa() que afecta a toda la
+// mesa, este solo destaca el item en cuestión.
+//
+// Mismo cooldown 30s. Mismo ticket impreso (pero con el plato concreto
+// en el aviso). Misma alarma en KDS. La mesa también sube al top.
+//
+// Solo se puede reclamar si el item está in_kitchen o ready — el
+// pending (sin enviar a cocina) no tiene sentido reclamar, el served
+// (entregado en mesa) tampoco.
+
+export async function reclamarItem(
+  itemId: string
+): Promise<{ success: boolean; printed: boolean; reason?: string }> {
+  const supabase = createServiceClient()
+  const restaurantId = await getRestaurantId()
+
+  // Leer item + order + mesa + staff.
+  const { data: item } = await supabase
+    .from('order_items')
+    .select(`
+      id, name, quantity, status, reclamado_at,
+      order:orders ( id, table_id, staff_id, restaurant_id )
+    `)
+    .eq('id', itemId)
+    .single()
+
+  if (!item) {
+    return { success: false, printed: false, reason: 'Item no encontrado' }
+  }
+
+  // Validación de estado.
+  if (item.status !== 'in_kitchen' && item.status !== 'ready') {
+    return {
+      success: false,
+      printed: false,
+      reason: `Solo se pueden reclamar items en cocina o listos (estado actual: ${item.status})`,
+    }
+  }
+
+  // Cooldown: si fue reclamado hace <30s, no-op silencioso.
+  if (item.reclamado_at) {
+    const elapsed = Date.now() - new Date(item.reclamado_at).getTime()
+    if (elapsed < RECLAMACION_COOLDOWN_MS) {
+      return { success: true, printed: false, reason: 'cooldown' }
+    }
+  }
+
+  const now = new Date().toISOString()
+  await supabase
+    .from('order_items')
+    .update({ reclamado_at: now })
+    .eq('id', itemId)
+
+  type OrderShape = { id: string; table_id: string; staff_id: string | null; restaurant_id: string }
+  const order = item.order as unknown as OrderShape | null
+
+  // Encolar ticket de aviso en cocina con el item concreto.
+  if (restaurantId && order) {
+    const { data: table } = await supabase
+      .from('tables')
+      .select('label')
+      .eq('id', order.table_id)
+      .single()
+
+    const { data: staff } = order.staff_id
+      ? await supabase.from('staff').select('name').eq('id', order.staff_id).single()
+      : { data: null }
+
+    await enqueuePrintJob({
+      restaurantId,
+      kind: 'reclamacion',
+      printerType: 'cocina',
+      orderId: order.id,
+      payload: {
+        table_label: table?.label || 'Mesa',
+        staff_name: staff?.name || null,
+        // Item concreto: name + cantidad. El renderer ya soporta
+        // esto opcionalmente (ver renderReclamacion).
+        item_name: item.name,
+        item_quantity: item.quantity,
+        printed_at: now,
+      },
+    })
+  }
+
+  return { success: true, printed: true }
 }
 
 // =====================================================================
@@ -1339,6 +1549,11 @@ export interface KdsItem {
   // del KDS + resaltado en azul en la izquierda. Ver scripts/007.
   in_prep_queue_at: string | null
   prep_queue_position: number | null
+  // Reclamación de este item concreto (Entrega 2). Si != null, el
+  // camarero pulsó "Reclamar" sobre este plato desde la comanda.
+  // Distinto de order.reclamada_at (que es mesa entera). Se muestra
+  // como badge rojo "ATENCION" al lado del item en el KDS.
+  reclamado_at: string | null
   modifier_summary: { name: string; price: number }[] | null
   order: {
     id: string
@@ -1371,7 +1586,7 @@ export async function getKdsItems(): Promise<KdsItem[]> {
     .select(`
       id, name, quantity, notes, status,
       sent_at, kds_position, modifier_summary,
-      in_prep_queue_at, prep_queue_position,
+      in_prep_queue_at, prep_queue_position, reclamado_at,
       order:orders (
         id, nota_mesa, urgente, comensales,
         orden_servicio, rondas, reclamada_at,
@@ -1423,6 +1638,7 @@ export async function getOrderForCaja(tableId: string): Promise<{
         notes: i.notes,
         modifier_summary: i.modifier_summary || [],
         printer_target: i.printer_target,
+      reclamado_at: i.reclamado_at || null,
         es_invitacion: i.es_invitacion || false,
         invitacion_motivo: i.invitacion_motivo,
       }))

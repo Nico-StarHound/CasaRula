@@ -46,9 +46,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { Table, TableStatus, Reservation, StaffRole } from '@/lib/types'
-import { updateTable } from '@/app/actions/floor-plan'
+import { updateTable, getTables } from '@/app/actions/floor-plan'
 import { updateReservationStatus } from '@/app/actions/reservations'
-import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, reclamarMesa, type Order } from '@/app/actions/comandas'
+import { openOrder, seatTableWalkIn, getOpenOrder, cancelOrder, reclamarMesa, transferOrder, type Order } from '@/app/actions/comandas'
 import { cn } from '@/lib/utils'
 
 interface TableActionSheetProps {
@@ -258,6 +258,16 @@ export function TableActionSheet({
   // con el error #310.
   const [reclamando, setReclamando] = useState(false)
 
+  // Sub-sheet "Cambiar de mesa" (F2). Cuando se abre, cargamos todas
+  // las mesas del restaurante para filtrar las libres y mostrar grid.
+  // moveLoading bloquea el botón mientras está en vuelo para evitar
+  // doble tap. moveError se muestra al usuario si el server rechaza
+  // (mesa ya ocupada, ya pidieron cuenta, etc.).
+  const [moveSheetOpen, setMoveSheetOpen] = useState(false)
+  const [allTables, setAllTables] = useState<(Table & { status?: TableStatus })[]>([])
+  const [moveLoading, setMoveLoading] = useState(false)
+  const [moveError, setMoveError] = useState<string | null>(null)
+
   // Show "Ver Comanda" for admin, camarero, caja roles
   const canSeeComanda = userRole && ['admin', 'camarero', 'caja'].includes(userRole)
 
@@ -428,6 +438,41 @@ const handleVerComanda = () => {
       await reclamarMesa(tableOpenOrder.id)
     } finally {
       setReclamando(false)
+    }
+  }
+
+  // Abre el sub-sheet "Cambiar de mesa". Antes de mostrarlo, carga
+  // todas las mesas del restaurante porque el listado de "libres"
+  // se calcula filtrando del total. Se cargan en cada apertura para
+  // estar siempre frescas (otra mesa puede haberse liberado en el
+  // ínterin).
+  const handleOpenMoveSheet = async () => {
+    setMoveError(null)
+    const all = await getTables()
+    setAllTables(all)
+    setMoveSheetOpen(true)
+  }
+
+  // Confirmar movimiento a la mesa destino. Llama al server action,
+  // que valida (origen open, destino libre, cuenta no pedida) y mueve.
+  // Si OK, cerramos todo y refrescamos. Si falla, mostramos el error
+  // en el propio sub-sheet sin cerrar — el usuario puede elegir otra
+  // mesa.
+  const handleConfirmMove = async (newTableId: string) => {
+    if (!tableOpenOrder || moveLoading) return
+    setMoveError(null)
+    setMoveLoading(true)
+    try {
+      const r = await transferOrder(tableOpenOrder.id, newTableId)
+      if (!r.success) {
+        setMoveError(r.error || 'No se pudo cambiar de mesa.')
+        return
+      }
+      setMoveSheetOpen(false)
+      onOpenChange(false)
+      onRefresh()
+    } finally {
+      setMoveLoading(false)
     }
   }
 
@@ -646,6 +691,22 @@ const handleVerComanda = () => {
                                     ? <Spinner className="mr-2" />
                                     : <AlertTriangle className="mr-2 h-5 w-5" />}
                                   Reclamar mesa
+                                </Button>
+                              )}
+
+                              {/* Cambiar de mesa (F2).
+                                  Solo si hay comanda abierta Y la cuenta
+                                  NO se ha pedido aún. Si ya hubo ticket
+                                  impreso con la mesa actual, mover ahora
+                                  ensucia los papeles. */}
+                              {tableOpenOrder && !tableOpenOrder.cuenta_pedida && (
+                                <Button
+                                  variant="outline"
+                                  className="w-full h-11"
+                                  onClick={handleOpenMoveSheet}
+                                >
+                                  <ArrowRightLeft className="mr-2 h-5 w-5" />
+                                  Cambiar de mesa
                                 </Button>
                               )}
 
@@ -903,6 +964,63 @@ const handleVerComanda = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Sub-sheet "Cambiar de mesa" (F2).
+          Lista las mesas libres del restaurante en grid. Al pulsar
+          una, se llama a transferOrder. Si falla, se muestra error
+          inline sin cerrar para que el usuario reintente con otra. */}
+      <Drawer open={moveSheetOpen} onOpenChange={setMoveSheetOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Cambiar a otra mesa</DrawerTitle>
+            <DrawerDescription>
+              Elige una mesa libre. Se moverá la comanda y se imprimirá
+              un aviso en cocina.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-6">
+            {moveError && (
+              <p className="text-sm text-destructive mb-3">{moveError}</p>
+            )}
+            {(() => {
+              // Mesa libre = sin status 'seated', 'reserved' ni 'blocked'.
+              // Excluimos también la propia mesa actual (no tiene sentido
+              // "moverse a sí misma").
+              const freeTables = allTables
+                .filter(t => t.id !== table?.id)
+                .filter(t => !t.status || t.status === 'available')
+                .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+              if (freeTables.length === 0) {
+                return (
+                  <p className="text-center text-muted-foreground py-8">
+                    No hay mesas libres ahora mismo.
+                  </p>
+                )
+              }
+              return (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {freeTables.map(t => (
+                    <Button
+                      key={t.id}
+                      variant="outline"
+                      className="h-16 text-base font-semibold"
+                      disabled={moveLoading}
+                      onClick={() => handleConfirmMove(t.id)}
+                    >
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+              )
+            })()}
+            {moveLoading && (
+              <p className="text-center text-muted-foreground mt-4">
+                <Spinner className="inline mr-2" />
+                Moviendo...
+              </p>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
     </>
   )
 }

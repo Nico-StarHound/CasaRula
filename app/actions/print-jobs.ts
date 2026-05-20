@@ -13,6 +13,7 @@ export type PrintJobKind =
   | 'rectificativa'
   | 'cuenta_provisional'
   | 'reclamacion'
+  | 'cambio_mesa'
   | 'test'
 
 export type PrinterType = 'cocina' | 'barra' | 'caja'
