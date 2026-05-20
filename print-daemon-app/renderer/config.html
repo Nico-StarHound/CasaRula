@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Casa Rula Print — configuración</title>
+  <style>
+    * { box-sizing: border-box }
+    body {
+      margin: 0; padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f7; color: #1c1c1e;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px }
+    .sub { font-size: 12px; color: #6e6e73; margin-bottom: 20px }
+    label {
+      display: block;
+      font-size: 12px; font-weight: 500;
+      margin: 14px 0 4px;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d2d2d7;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    input:focus { outline: 2px solid #007aff; outline-offset: -1px; border-color: transparent }
+    .row { display: flex; gap: 12px }
+    .row > div { flex: 1 }
+    .hint { font-size: 11px; color: #6e6e73; margin-top: 3px }
+    footer {
+      margin-top: 24px;
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #d2d2d7;
+      background: white;
+    }
+    button.primary {
+      background: #007aff; color: white; border-color: #007aff;
+    }
+    #status { font-size: 12px; color: #34c759; min-height: 16px }
+  </style>
+</head>
+<body>
+  <h1>Configuración</h1>
+  <div class="sub">Estos datos los necesita la app para conectarse a Supabase. Pregunta a tu administrador si no los tienes.</div>
+
+  <label for="url">URL de Supabase</label>
+  <input id="url" placeholder="https://xxxx.supabase.co" />
+
+  <label for="key">Service Role Key</label>
+  <input id="key" type="password" placeholder="eyJhbGciOi..." />
+  <div class="hint">Es la "service_role" del panel de Supabase, no la "anon".</div>
+
+  <label for="restaurant">Restaurant ID</label>
+  <input id="restaurant" placeholder="UUID del restaurante" />
+
+  <label>Horario de servicio (el iMac no se duerme en esta franja)</label>
+  <div class="row">
+    <div>
+      <input id="start" placeholder="08:00" />
+      <div class="hint">Inicio</div>
+    </div>
+    <div>
+      <input id="end" placeholder="01:00" />
+      <div class="hint">Fin (puede pasar de medianoche)</div>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <footer>
+    <button id="cancel">Cancelar</button>
+    <button id="save" class="primary">Guardar y reiniciar</button>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id)
+    let cfg = {}
+    window.electronAPI.onConfigInit((c) => {
+      cfg = c
+      $('url').value = c.supabaseUrl || ''
+      $('key').value = c.supabaseServiceRoleKey || ''
+      $('restaurant').value = c.restaurantId || ''
+      $('start').value = c.serviceStart || '08:00'
+      $('end').value = c.serviceEnd || '01:00'
+    })
+    $('save').onclick = async () => {
+      const next = {
+        supabaseUrl: $('url').value.trim(),
+        supabaseServiceRoleKey: $('key').value.trim(),
+        restaurantId: $('restaurant').value.trim(),
+        serviceStart: $('start').value.trim() || '08:00',
+        serviceEnd: $('end').value.trim() || '01:00',
+      }
+      if (!next.supabaseUrl || !next.supabaseServiceRoleKey || !next.restaurantId) {
+        $('status').textContent = 'Faltan campos obligatorios.'
+        $('status').style.color = '#ff3b30'
+        return
+      }
+      $('status').textContent = 'Guardando...'
+      $('status').style.color = '#6e6e73'
+      await window.electronAPI.saveConfig(next)
+      $('status').textContent = 'Guardado. Cerrando ventana...'
+      $('status').style.color = '#34c759'
+      setTimeout(() => window.close(), 800)
+    }
+    $('cancel').onclick = () => window.close()
+  </script>
+</body>
+</html>

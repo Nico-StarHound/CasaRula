@@ -1,0 +1,65 @@
+{
+  "name": "casarula-print",
+  "version": "0.1.0",
+  "description": "Casa Rula Print — daemon de impresión empaquetado como app de escritorio para macOS",
+  "private": true,
+  "main": "dist/main.js",
+  "author": {
+    "name": "Casa Rula"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dev": "tsc -w -p tsconfig.json & electron .",
+    "dist": "npm run build && electron-builder --mac --arm64 --x64 -p never"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "iconv-lite": "^0.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.7.3"
+  },
+  "build": {
+    "appId": "com.casarula.print",
+    "productName": "Casa Rula Print",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "assets/**/*",
+      "../print-daemon/src/**/*",
+      "../print-daemon/fonts/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Casa Rula Print",
+      "icon": "assets/icon.png",
+      "contents": [
+        { "x": 130, "y": 220, "type": "file" },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

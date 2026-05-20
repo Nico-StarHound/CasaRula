@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Casa Rula Print — registro</title>
+  <style>
+    * { box-sizing: border-box }
+    body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #1c1c1e; color: #f2f2f7;
+      height: 100vh;
+      display: flex; flex-direction: column;
+    }
+    header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #38383a;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 14px; margin: 0; font-weight: 600 }
+    header button {
+      background: #2c2c2e; color: #f2f2f7;
+      border: 1px solid #48484a;
+      padding: 4px 10px; border-radius: 6px;
+      cursor: pointer; font-size: 12px;
+    }
+    #logs {
+      flex: 1; overflow-y: auto;
+      padding: 8px 16px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 11px; line-height: 1.5;
+    }
+    .line { white-space: pre-wrap; word-break: break-all }
+    .line.err { color: #ff6b6b }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Registro · Casa Rula Print</h1>
+    <button id="clear">Limpiar pantalla</button>
+  </header>
+  <div id="logs"></div>
+  <script>
+    const logs = document.getElementById('logs')
+    function append(line) {
+      const div = document.createElement('div')
+      div.className = 'line' + (line.includes('ERR ') ? ' err' : '')
+      div.textContent = line
+      logs.appendChild(div)
+      logs.scrollTop = logs.scrollHeight
+    }
+    window.electronAPI.onLogInit((lines) => {
+      logs.innerHTML = ''
+      lines.forEach(append)
+    })
+    window.electronAPI.onLogLine(append)
+    document.getElementById('clear').onclick = () => { logs.innerHTML = '' }
+  </script>
+</body>
+</html>
