@@ -77,6 +77,7 @@ import {
 } from '@/app/actions/menu'
 import { PrintersSection } from '@/components/printers-section'
 import { AndroidAppCard } from '@/components/android-app-card'
+import { MacAppCard } from '@/components/mac-app-card'
 
 type Section = 'plano' | 'personal' | 'ticket' | 'carta' | 'impresoras' | 'general'
 type CartaTab = 'categorias' | 'platos' | 'modificadores' | 'preview'
@@ -1102,6 +1103,7 @@ export function AjustesClient({
               </Card>
 
               <AndroidAppCard />
+              <MacAppCard />
             </div>
           )}
         </main>
