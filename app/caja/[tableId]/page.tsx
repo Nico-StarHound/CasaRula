@@ -124,19 +124,23 @@ export default function CajaPage({ params }: { params: Promise<{ tableId: string
   // Totals — mirror what /cuenta computed. We don't re-apply discounts
   // here because those mutations already happened upstream and were
   // persisted on the order rows.
-  const subtotal = items
+  // Los precios ya incluyen IVA (10% hostelería). Total = lo que paga
+  // el cliente. Desglosamos base e IVA solo para mostrar y guardar
+  // ticket fiscal.
+  const total = items
     .filter(i => !i.es_invitacion)
-    .reduce((sum, item) => sum + item.price * item.quantity, 0) / 1.10
-  const iva = subtotal * 0.10
-  const total = subtotal + iva
+    .reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const base = total / 1.10
+  const iva = total - base
 
-  const cambio = paymentMethod === 'efectivo' && efectivoEntregado
-    ? Math.max(0, parseFloat(efectivoEntregado) - total)
-    : 0
+  // Cambio = 0 siempre. Antes pediamos efectivo entregado para calcular
+  // vuelta, pero el camarero lo hace mental con el cliente delante y
+  // no necesita la app para eso. Simplificado: solo marcar metodo.
+  const cambio = 0
 
   const canCobrar = paymentMethod !== null && (
     (paymentMethod === 'tarjeta') ||
-    (paymentMethod === 'efectivo' && parseFloat(efectivoEntregado || '0') >= total) ||
+    (paymentMethod === 'efectivo') ||
     (paymentMethod === 'mixto' && parseFloat(efectivoMixto || '0') + parseFloat(tarjetaMixto || '0') >= total)
   )
 
@@ -198,7 +202,7 @@ export default function CajaPage({ params }: { params: Promise<{ tableId: string
         comensales: order.comensales,
         items: ticketItems,
         payment_method: paymentMethod,
-        efectivo_entregado: paymentMethod === 'efectivo' ? parseFloat(efectivoEntregado) : undefined,
+        efectivo_entregado: undefined,
         cliente: emitirCompleta
           ? {
               nif: clienteNif.trim().toUpperCase(),
@@ -352,30 +356,11 @@ export default function CajaPage({ params }: { params: Promise<{ tableId: string
           </Button>
         </div>
 
-        {/* Efectivo input */}
-        {paymentMethod === 'efectivo' && (
-          <div className="space-y-4 mb-6">
-            <div>
-              <Label htmlFor="efectivo">Efectivo entregado</Label>
-              <Input
-                id="efectivo"
-                type="number"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={efectivoEntregado}
-                onChange={(e) => setEfectivoEntregado(e.target.value)}
-                className="text-2xl h-14 text-center"
-                autoFocus
-              />
-            </div>
-            {parseFloat(efectivoEntregado) >= total && (
-              <div className="text-center p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <p className="text-sm text-muted-foreground">Cambio</p>
-                <p className="text-2xl font-bold text-green-600">{cambio.toFixed(2)}€</p>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Antes habia un input 'Efectivo entregado' + calculo de cambio
+            cuando paymentMethod === 'efectivo'. Quitado a peticion del
+            usuario: el camarero hace la vuelta de cabeza con el cliente
+            delante, no necesita la app para eso. Solo marca el metodo
+            y cobra. */}
 
         {/* Mixto inputs */}
         {paymentMethod === 'mixto' && (
