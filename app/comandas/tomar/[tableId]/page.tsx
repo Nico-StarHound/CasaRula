@@ -662,8 +662,15 @@ const handleSendToKitchen = async () => {
 
   // Order summary component (reused in both mobile sheet and desktop panel)
   const OrderSummary = ({ inSheet = false }: { inSheet?: boolean }) => (
-    <div className={cn("flex flex-col", inSheet ? "h-full" : "h-full")}>
-      <ScrollArea className="flex-1">
+    <div className={cn("flex flex-col min-h-0", inSheet ? "h-full" : "h-full")}>
+      {/* `min-h-0` aquí Y en el ScrollArea wrapper es clave.
+          Sin él, el ScrollArea de shadcn (que vive sobre Radix
+          ScrollAreaPrimitive) toma todo el contenido como altura
+          natural en lugar de respetar el flex-1 del padre. Resultado:
+          la lista de items crece sin scroll cuando hay muchos, y el
+          footer con el botón "Enviar" se sale fuera de la zona
+          visible del sheet — el usuario no puede pulsarlo. */}
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-3 space-y-4">
           {/* Pending items */}
           {pendingItems.length > 0 && (
