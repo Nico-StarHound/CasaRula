@@ -116,9 +116,18 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
     }
   }
 
+  // Los precios de menu_items YA INCLUYEN IVA (10% hostelería).
+  // Por tanto:
+  //   - subtotalBruto = suma de precios * cantidades = TOTAL CON IVA ya dentro
+  //   - tras descuento: el "total final" es subtotal (lo que paga el cliente)
+  //   - base imponible: total / 1.10
+  //   - iva: total - base
+  // Antes el código hacía `total = subtotal + subtotal*0.10` lo que SUMABA un
+  // 10% extra encima de un precio que ya tenía IVA dentro, cobrando 10% de más.
   const subtotal = subtotalBruto - descuentoAmount
-  const iva = subtotal * 0.10
-  const total = subtotal + iva
+  const total = subtotal                        // lo que paga el cliente
+  const base = total / 1.10                     // base imponible (sin IVA)
+  const iva = total - base                      // IVA desglosado
 
   const splitAmount = total / splitCount
 
@@ -512,11 +521,17 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
             </div>
           </ScrollArea>
 
-          {/* Totals */}
+          {/* Totals.
+              Los precios YA INCLUYEN IVA. Mostramos:
+                - Base imponible (sin IVA)
+                - IVA 10%
+                - TOTAL (lo que paga el cliente, IVA incluido)
+              Base + IVA = TOTAL. Antes el código sumaba IVA encima del
+              subtotal y el cliente pagaba 10% de más. */}
           <div className="flex-shrink-0 border-t p-4 space-y-2 bg-muted/30">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{subtotal.toFixed(2)}€</span>
+              <span className="text-muted-foreground">Base imponible</span>
+              <span>{base.toFixed(2)}€</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">IVA 10%</span>
