@@ -514,7 +514,7 @@ const handleVerComanda = () => {
   <div class="divider"></div>
   ${itemsHTML}
   <div class="divider"></div>
-  <div class="tax"><span>Subtotal s/IVA</span><span>${subtotal.toFixed(2)}€</span></div>
+  <div class="tax"><span>Base imponible</span><span>${subtotal.toFixed(2)}€</span></div>
   <div class="tax"><span>IVA 10%</span><span>${iva.toFixed(2)}€</span></div>
   <div class="divider"></div>
   <div class="total"><span>TOTAL</span><span>${total.toFixed(2)}€</span></div>

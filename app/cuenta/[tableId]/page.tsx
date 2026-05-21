@@ -159,7 +159,10 @@ export default function CajaTablePage({ params }: { params: Promise<{ tableId: s
     const sharedPerPerson = sharedGross / splitCount
     for (let i = 0; i < splitCount; i++) personGross[i] += sharedPerPerson
 
-    // Pro-rate discount + IVA. ratio = (subtotal+iva)/subtotalBruto = total/subtotalBruto.
+    // Pro-rate del descuento. ratio = total/subtotalBruto. Sin
+    // descuento ratio=1. Con descuento ratio<1, todos pagan proporcional.
+    // IVA está dentro del precio así que no se reparte aparte, va dentro
+    // del lineTotal de cada item.
     const ratio = total / subtotalBruto
     return personGross.map(g => g * ratio)
   }
